@@ -9,6 +9,8 @@ import (
 	"github.com/Bplotka/oidc"
 )
 
+//go:generate mockery -name TokenCache -case underscore
+
 // TokenCache is a Open ID Connect Token caching structure.
 type TokenCache interface {
 	SetToken(token *oidc.Token) error

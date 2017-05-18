@@ -11,21 +11,11 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/Bplotka/oidc"
 )
 
 const (
-	stateValidFor    = 10 * time.Minute
-	callbackEndpoint = "/callback"
-	loginEndpoint    = "/login"
-
-	certCacheDir  = "/var/www/.cache_corpauth_client/certs"
-	tokenCacheDir = "/var/www/.cache_corpauth_client/tokens"
-
-	sharedStateToken = "my-super-state"
-
 	codeParam  = "code"
 	stateParam = "state"
 
@@ -65,7 +55,7 @@ type callbackMsg struct {
 }
 
 func parseCallbackRequest(form url.Values) (code string, state string, err error) {
-	state = form.Get("state")
+	state = form.Get(stateParam)
 	if state == "" {
 		return "", "", errors.New("User session error. No state parameter.")
 	}
@@ -108,7 +98,6 @@ func CallbackHandler(
 	callbackChan chan<- *callbackMsg,
 ) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-
 		code, state, err := parseCallbackRequest(r.Form)
 		if err != nil {
 			errRespond(w, r, err, callbackChan)

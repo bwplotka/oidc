@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"sync"
 	"time"
 
 	"github.com/Bplotka/oidc"
@@ -16,11 +15,14 @@ import (
 
 const callbackPath = "/oidc-callback"
 
+func callbackURL(u *url.URL) string {
+	return u.Path + callbackPath
+}
+
 // CachedOIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
 // It caches fetched tokens in provided TokenCache e.g on disk.
+// No mutex since it is implemented to be used with oidc.ReuseTokenSource which already guards it.
 type OIDCTokenSource struct {
-	sync.Mutex
-
 	ctx    context.Context
 	logger *log.Logger
 
@@ -36,16 +38,16 @@ type OIDCTokenSource struct {
 }
 
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
-	oidcConfig := oidc.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  cfg.BindAddress + callbackEndpoint,
-		Scopes:       cfg.Scopes,
-	}
-
 	bindURL, err := url.Parse(cfg.BindAddress)
 	if err != nil {
 		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
+	}
+
+	oidcConfig := oidc.Config{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		RedirectURL:  callbackURL(bindURL),
+		Scopes:       cfg.Scopes,
 	}
 
 	oidcClient, err := oidc.NewClient(ctx, cfg.Provider)
@@ -71,9 +73,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
 func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
-	s.Lock()
-	defer s.Unlock()
-
 	cachedToken, err := s.tokenCache.Token()
 	if err != nil {
 		s.logger.Printf("Error: Failed to get cached token. Caching might be broken. Err: %v", err)
@@ -102,7 +101,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	}
 
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
-	newToken, err := s.updateRefreshToken()
+	newToken, err := s.newToken()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to obtain new refresh token. Err: %v", err)
 	}
@@ -135,8 +134,6 @@ func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, e
 		return nil, fmt.Errorf("got invalid idToken from provider.")
 	}
 
-	s.Lock()
-	defer s.Unlock()
 	err = s.tokenCache.SetToken(token)
 	if err != nil {
 		s.logger.Printf("Warn: Cannot cache token. Err: %v", err)
@@ -158,8 +155,15 @@ func oidcContextWithTimeout(ctx context.Context) context.Context {
 	})
 }
 
-func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
-	s.logger.Print("Debug: Perfoming auth Code flow to obtain new refresh token and other tokens.")
+func (s *OIDCTokenSource) prefixPath() string {
+	if s.bindURL.Path != "" {
+		return s.bindURL.Path
+	}
+	return "/"
+}
+
+func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
+	s.logger.Print("Debug: Perfoming auth Code flow to obtain entirely new OIDC token.")
 
 	callbackChan := make(chan *callbackMsg, 100)
 
@@ -175,7 +179,7 @@ func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
 	defer cancel()
 
 	handler := http.NewServeMux()
-	handler.HandleFunc(s.bindURL.Path+callbackPath, CallbackHandler(
+	handler.HandleFunc(callbackURL(s.bindURL), CallbackHandler(
 		s.oidcClient,
 		s.oidcConfig,
 		state,
@@ -196,6 +200,7 @@ func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
 	}()
 
 	authURL := s.oidcClient.AuthCodeURL(s.oidcConfig, state, extra)
+
 	err := openBrowser(authURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: Failed to open browser. Err: %v", err)
@@ -215,8 +220,6 @@ func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
 			return nil, fmt.Errorf("oidc: Callback error: %v", msg.err)
 		}
 
-		s.Lock()
-		defer s.Unlock()
 		s.nonce = nonce
 		err = s.tokenCache.SetToken(msg.token)
 		if err != nil {
