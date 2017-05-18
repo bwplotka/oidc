@@ -98,6 +98,13 @@ func CallbackHandler(
 	callbackChan chan<- *callbackMsg,
 ) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		err := r.ParseForm()
+		if err != nil {
+			err := fmt.Errorf("Failed to parse request form. Err: %v", err)
+			errRespond(w, r, err, callbackChan)
+			return
+		}
+
 		code, state, err := parseCallbackRequest(r.Form)
 		if err != nil {
 			errRespond(w, r, err, callbackChan)
@@ -105,12 +112,11 @@ func CallbackHandler(
 		}
 
 		if state != expectedState {
-			err := fmt.Errorf(" Invalid state parameter. Got %s, expected: %s", state, expectedState)
+			err := fmt.Errorf("Invalid state parameter. Got %s, expected: %s", state, expectedState)
 			errRespond(w, r, err, callbackChan)
 			return
 		}
 
-		// Ask for token.
 		oidcToken, err := oidcClient.Exchange(r.Context(), oidcConfig, code)
 		if err != nil {
 			errRespond(w, r, err, callbackChan)
