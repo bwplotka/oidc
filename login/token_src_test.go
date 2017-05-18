@@ -97,5 +97,5 @@ func TestCallbackURL(t *testing.T) {
 	bindURL, err := url.Parse(testBindAddress)
 	require.NoError(t, err)
 	assert.Equal( t, "127.0.0.1:8393", bindURL.Host)
-	assert.Equal(t, "/something/oidc-callback", callbackURL(bindURL))
+	assert.Equal(t, "/something/callback", callbackURL(bindURL))
 }

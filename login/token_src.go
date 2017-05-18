@@ -13,7 +13,7 @@ import (
 	"github.com/Bplotka/oidc"
 )
 
-const callbackPath = "/oidc-callback"
+const callbackPath = "/callback"
 
 func callbackURL(u *url.URL) string {
 	return u.Path + callbackPath
