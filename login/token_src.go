@@ -31,7 +31,8 @@ type OIDCTokenSource struct {
 	tokenCache TokenCache
 	nonce      string
 
-	cfg Config
+	bindURL *url.URL
+	cfg     Config
 }
 
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
@@ -40,6 +41,11 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		ClientSecret: cfg.ClientSecret,
 		RedirectURL:  "todo",
 		Scopes:       cfg.Scopes,
+	}
+
+	bindURL, err := url.Parse(cfg.BindAddress)
+	if err != nil {
+		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
 	}
 
 	oidcClient, err := oidc.NewClient(ctx, cfg.Issuer)
@@ -56,6 +62,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 
 		tokenCache: tokenCache,
 		cfg:        cfg,
+		bindURL:    bindURL,
 	}
 
 	return oidc.NewReuseTokenSource(nil, s), nil
@@ -175,7 +182,7 @@ func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
 		callbackChan,
 	))
 
-	server := &http.Server{Addr: s.cfg.BindAddress, Handler: handler}
+	server := &http.Server{Addr: s.bindURL.Host, Handler: handler}
 	go func() {
 		err := server.ListenAndServe()
 		if err != nil {
