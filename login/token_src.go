@@ -46,7 +46,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 	oidcConfig := oidc.Config{
 		ClientID:     cfg.ClientID,
 		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  callbackURL(bindURL),
+		RedirectURL:  bindURL.String() + callbackPath,
 		Scopes:       cfg.Scopes,
 	}
 
