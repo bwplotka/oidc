@@ -117,6 +117,7 @@ func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, e
 	token, err := s.oidcClient.TokenSource(
 		ctx,
 		s.oidcConfig,
+		oidc.VerificationConfig{ClientID: s.cfg.ClientID},
 		invalidToken,
 	).OIDCToken()
 	if err != nil {
