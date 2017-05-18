@@ -175,7 +175,7 @@ func (s *OIDCTokenSource) updateRefreshToken() (*oidc.Token, error) {
 	defer cancel()
 
 	handler := http.NewServeMux()
-	handler.HandleFunc(callbackPath, CallbackHandler(
+	handler.HandleFunc(s.bindURL.Path+callbackPath, CallbackHandler(
 		s.oidcClient,
 		s.oidcConfig,
 		state,
