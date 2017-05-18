@@ -303,12 +303,11 @@ func (c *Client) TokenSource(ctx context.Context, cfg Config, vcfg VerificationC
 
 		client: c,
 		cfg:    cfg,
-		vCfg:   vcfg,
 	}
 	if t != nil {
 		tkr.refreshToken = t.RefreshToken
 	}
-	return NewReuseTokenSource(t, tkr)
+	return NewReuseTokenSource(t, c.Verifier(vcfg), tkr)
 }
 
 func (c *Client) token(ctx context.Context, clientID string, clientSecret string, v url.Values) (*Token, error) {

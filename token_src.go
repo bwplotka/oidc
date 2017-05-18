@@ -15,7 +15,6 @@ type TokenSource interface {
 	// OIDCToken must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
 	OIDCToken() (*Token, error)
-	Verifier() Verifier
 }
 
 // ReuseTokenSource is a oidc TokenSource that holds a single token in memory
@@ -28,15 +27,18 @@ type ReuseTokenSource struct {
 	new TokenSource // called when t is expired.
 	mu  sync.Mutex  // guards t
 	t   *Token
+
+	verifier Verifier
 }
 
 // ReuseTokenSource returns a TokenSource which repeatedly returns the
 // same token as long as it's valid, starting with t.
 // When its cached token is invalid, a new token is obtained from source.
-func NewReuseTokenSource(t *Token, src TokenSource) TokenSource {
+func NewReuseTokenSource(t *Token, verifier Verifier, src TokenSource) TokenSource {
 	return &ReuseTokenSource{
-		t:   t,
-		new: src,
+		t:        t,
+		verifier: verifier,
+		new:      src,
 	}
 }
 
@@ -46,7 +48,7 @@ func NewReuseTokenSource(t *Token, src TokenSource) TokenSource {
 func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.t != nil && s.t.Valid(s.ctx, s.Verifier()) {
+	if s.t != nil && s.t.Valid(s.ctx, s.verifier) {
 		return s.t, nil
 	}
 	t, err := s.new.OIDCToken()
@@ -57,11 +59,6 @@ func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
 	return t, nil
 }
 
-// Verifier returns inner token source verifier.
-func (s *ReuseTokenSource) Verifier() Verifier {
-	return s.new.Verifier()
-}
-
 // TokenRefresher is a TokenSource that makes "grant_type"=="refresh_token"
 // HTTP requests to renew a token using a RefreshToken.
 type tokenRefresher struct {
@@ -70,8 +67,7 @@ type tokenRefresher struct {
 	refreshToken string
 	client       *Client
 
-	cfg  Config
-	vCfg VerificationConfig
+	cfg Config
 }
 
 // WARNING: Token is not safe for concurrent access, as it
@@ -104,7 +100,18 @@ func (tf *tokenRefresher) OIDCToken() (*Token, error) {
 	return tk, err
 }
 
-// Verifier returns inner token source verifier.
-func (tf *tokenRefresher) Verifier() Verifier {
-	return tf.client.Verifier(tf.vCfg)
+// StaticTokenSource returns a TokenSource that always returns the same token.
+// Because the provided token t is never refreshed, StaticTokenSource is only
+// useful for tokens that never expire.
+func StaticTokenSource(t *Token) TokenSource {
+	return staticTokenSource{t}
+}
+
+// staticTokenSource is a TokenSource that always returns the same Token.
+type staticTokenSource struct {
+	t *Token
+}
+
+func (s staticTokenSource) OIDCToken() (*Token, error) {
+	return s.t, nil
 }
