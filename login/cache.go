@@ -15,6 +15,8 @@ type TokenCache interface {
 	Token() (*oidc.Token, error)
 }
 
+const DefaultTokenCache = "~/.oidc_keys"
+
 // OnDiskTokenCache is a OAuth Token caching structure that stores it on disk.
 type OnDiskTokenCache struct {
 	storePath string

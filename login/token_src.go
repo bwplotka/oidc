@@ -58,13 +58,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		cfg:        cfg,
 	}
 
-	return oidc.NewReuseTokenSource(
-		nil,
-		s.oidcClient.Verifier(oidc.VerificationConfig{
-			ClientID: cfg.ClientID,
-		}),
-		s,
-	), nil
+	return oidc.NewReuseTokenSource(nil, s), nil
 }
 
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
@@ -109,6 +103,12 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	return newToken, nil
 }
 
+func (s *OIDCTokenSource) Verifier() oidc.Verifier {
+	return s.oidcClient.Verifier(oidc.VerificationConfig{
+		ClientID: s.oidcConfig.ClientID,
+	})
+}
+
 func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, error) {
 	ctx := oidcContextWithTimeout(s.ctx)
 
@@ -117,7 +117,6 @@ func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, e
 	token, err := s.oidcClient.TokenSource(
 		ctx,
 		s.oidcConfig,
-		oidc.VerificationConfig{ClientID: s.cfg.ClientID},
 		invalidToken,
 	).OIDCToken()
 	if err != nil {
