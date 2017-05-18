@@ -48,7 +48,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
 	}
 
-	oidcClient, err := oidc.NewClient(ctx, cfg.Issuer)
+	oidcClient, err := oidc.NewClient(ctx, cfg.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
 	}
