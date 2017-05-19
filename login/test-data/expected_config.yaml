@@ -9,20 +9,20 @@ users:
         client-id: ID1
         client-secret: secret1
         extra-scopes: groups
-        id-token: xxx1.xxx2.xxx3
+        id-token: new-id-token
         idp-issuer-url: https://example.org
-        refresh-token: refresh_token1
+        refresh-token: new-refresh-token
       name: oidc
 - name: cluster2-access
   user:
     auth-provider:
       config:
-        client-id: ID2
+        client-id: ID1
         client-secret: secret1
         extra-scopes: groups
-        id-token: xxx1.xxx2.xxx3
+        id-token: new-id-token
         idp-issuer-url: https://example.org
-        refresh-token: refresh_token1
+        refresh-token: new-refresh-token
       name: oidc
 - name: something1
   user:

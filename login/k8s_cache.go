@@ -3,6 +3,7 @@ package login
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -189,5 +190,107 @@ func compareStringSlices(x, y []string) bool {
 // SetToken saves token as k8s user's credentials inside k8s config directory. It saves the same thing for all specified
 // k8s users.
 func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
-	return nil
+	path := safeFilePath(c.kubeConfigPath)
+
+	file, err := ioutil.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("Failed to get k8s config from file %v. Make sure it is there or change"+
+			" permissions. Err: %v", path, err)
+	}
+
+	k8sConfig := &K8sConfig{}
+	err = yaml.Unmarshal(file, k8sConfig)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal k8s config to expected struct. Err: %v", err)
+	}
+
+	processedUsers := map[string]struct{}{}
+	for i, user := range k8sConfig.Users {
+		if _, ok := c.users[user.Name]; !ok {
+			continue
+		}
+
+		// Always override with correct values.
+		validUser := &K8sUser{
+			Name: user.Name,
+			User: &K8sAuthInfo{
+				AuthProvider: &K8sAuthProviderConfig{
+					Name: "oidc",
+					Config: map[string]string{
+						"idp-issuer-url": c.loginCfg.Provider,
+						"client-id":      c.loginCfg.ClientID,
+						"client-secret":  c.loginCfg.ClientSecret,
+						"extra-scopes":   strings.Join(extraScopes(c.loginCfg), ","),
+
+						"refresh-token": token.RefreshToken,
+						"id-token":      token.IDToken,
+					},
+				},
+			},
+		}
+		k8sConfig.Users[i] = validUser
+		processedUsers[user.Name] = struct{}{}
+	}
+
+	for userName := range c.users {
+		if _, ok := processedUsers[userName]; ok {
+			continue
+		}
+
+		validUser := &K8sUser{
+			Name: userName,
+			User: &K8sAuthInfo{
+				AuthProvider: &K8sAuthProviderConfig{
+					Name: "oidc",
+					Config: map[string]string{
+						"idp-issuer-url": c.loginCfg.Provider,
+						"client-id":      c.loginCfg.ClientID,
+						"client-secret":  c.loginCfg.ClientSecret,
+						"extra-scopes":   strings.Join(extraScopes(c.loginCfg), ","),
+
+						"refresh-token": token.RefreshToken,
+						"id-token":      token.IDToken,
+					},
+				},
+			},
+		}
+		k8sConfig.Users = append(k8sConfig.Users, validUser)
+	}
+
+	mergedConfig, err := merge(file, k8sConfig)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(path, mergedConfig, os.ModePerm)
+}
+
+func merge(original []byte, new *K8sConfig) ([]byte, error) {
+	marshaled, err := yaml.Marshal(new)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to marshall k8s config. Err: %v", err)
+	}
+
+	newRaw := map[string]interface{}{}
+	err = yaml.Unmarshal(marshaled, &newRaw)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to unmarshal k8s config from marshalled version. Err: %v", err)
+	}
+
+	originalRaw := map[string]interface{}{}
+	err = yaml.Unmarshal(original, &originalRaw)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to unmarshal k8s config from file. Err: %v", err)
+	}
+
+	// Merge these two.
+	for key := range newRaw {
+		originalRaw[key] = newRaw[key]
+	}
+
+	merged, err := yaml.Marshal(originalRaw)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to marshall merged k8s config. Err: %v", err)
+	}
+	return merged, nil
 }
