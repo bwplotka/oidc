@@ -28,7 +28,7 @@ func rand128Bits() string {
 	if _, err := io.ReadFull(rand.Reader, buff); err != nil {
 		panic(err)
 	}
-	return strings.TrimRight(base64.StdEncoding.EncodeToString(buff), "=")
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(buff), "=")
 }
 
 // open opens the specified URL in the default browser of the user.

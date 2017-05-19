@@ -6,20 +6,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
 	"github.com/Bplotka/oidc"
 )
 
-//go:generate mockery -name TokenCache -case underscore
-
-// TokenCache is a Open ID Connect Token caching structure.
-type TokenCache interface {
-	SetToken(token *oidc.Token) error
-	Token() (*oidc.Token, error)
-}
-
 const DefaultTokenCache = "~/.oidc_keys"
 
-// OnDiskTokenCache is a OAuth Token caching structure that stores it on disk.
+// OnDiskTokenCache is a oidc Token caching structure that stores it on disk.
 type OnDiskTokenCache struct {
 	storePath string
 	clientID  string

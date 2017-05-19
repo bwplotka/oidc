@@ -74,10 +74,16 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 		s.testCfg,
 		s.cache)
 	s.NoError(err)
+
 }
 
 func (s *TokenSourceTestSuite) SetupTest() {
 	s.s.Reset()
+
+	s.source.(*OIDCTokenSource).openBrowser = func(string) error {
+		s.T().Errorf("Not mocked")
+		return nil
+	}
 }
 
 func TestTokenSourceTestSuite(t *testing.T) {
@@ -86,6 +92,7 @@ func TestTokenSourceTestSuite(t *testing.T) {
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_ObtainNewToken() {
 	s.cache.On("Token").Return(nil, nil)
+
 
 	token, err := s.source.OIDCToken()
 	s.NoError(err)

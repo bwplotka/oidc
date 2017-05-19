@@ -1,0 +1,24 @@
+current-context: cluster1
+kind: Config
+preferences: {}
+users:
+- name: cluster1-access
+  user:
+    auth-provider:
+      config:
+        client-id: ID1
+        client-secret: secret1
+        extra-scopes: groups
+        id-token: xxx1.xxx2.xxx3
+        idp-issuer-url: https://example.org
+        refresh-token: refresh_token1
+      name: oidc
+- name: something1
+  user:
+    auth-provider:
+      config:
+        cmd-args: a1 a2
+        cmd-path: /home/user
+        expiry-key: '{.credential.token_expiry}'
+        token-key: '{.credential.access_token}'
+      name: gcp

@@ -19,6 +19,14 @@ func callbackURL(u *url.URL) string {
 	return u.Path + callbackPath
 }
 
+//go:generate mockery -name TokenCache -case underscore
+
+// TokenCache is a Open ID Connect Token caching structure.
+type TokenCache interface {
+	SetToken(token *oidc.Token) error
+	Token() (*oidc.Token, error)
+}
+
 // CachedOIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
 // It caches fetched tokens in provided TokenCache e.g on disk.
 // No mutex since it is implemented to be used with oidc.ReuseTokenSource which already guards it.
@@ -35,6 +43,8 @@ type OIDCTokenSource struct {
 
 	bindURL *url.URL
 	cfg     Config
+
+	openBrowser func(string) error
 }
 
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
@@ -65,6 +75,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		tokenCache: tokenCache,
 		cfg:        cfg,
 		bindURL:    bindURL,
+		openBrowser: openBrowser,
 	}
 
 	return oidc.NewReuseTokenSource(nil, s), nil
@@ -201,7 +212,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 
 	authURL := s.oidcClient.AuthCodeURL(s.oidcConfig, state, extra)
 
-	err := openBrowser(authURL)
+	err := s.openBrowser(authURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: Failed to open browser. Err: %v", err)
 	}
