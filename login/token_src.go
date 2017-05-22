@@ -27,9 +27,9 @@ type TokenCache interface {
 	Token() (*oidc.Token, error)
 }
 
-// CachedOIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
-// It caches fetched tokens in provided TokenCache e.g on disk.
-// No mutex since it is implemented to be used with oidc.ReuseTokenSource which already guards it.
+// OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
+// It caches fetched tokens in provided TokenCache e.g on disk or in k8s config.
+// No mutex is implemented, since it is made to be used with oidc.ReuseTokenSource which already guards it.
 type OIDCTokenSource struct {
 	ctx    context.Context
 	logger *log.Logger
@@ -48,6 +48,7 @@ type OIDCTokenSource struct {
 	genRandToken func() string
 }
 
+// NewOIDCTokenSource constructs OIDCTokenSource.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
 	bindURL, err := url.Parse(cfg.BindAddress)
 	if err != nil {
@@ -120,6 +121,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	return newToken, nil
 }
 
+// Verifier returns verifier for tokens.
 func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 	return s.oidcClient.Verifier(oidc.VerificationConfig{
 		ClientID:   s.oidcConfig.ClientID,
@@ -142,7 +144,7 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 	}
 
 	if !token.Valid(s.ctx, s.Verifier()) {
-		return nil, fmt.Errorf("got invalid idToken from provider.")
+		return nil, fmt.Errorf("got invalid idToken from provider")
 	}
 
 	err = s.tokenCache.SetToken(token)
@@ -160,6 +162,10 @@ func (s *OIDCTokenSource) prefixPath() string {
 	return "/"
 }
 
+// newToken starts short-living server that exposes callback handler and opens browser to call Provider auth endpoint
+// with response type set to `code`.
+// NOTE: this flow will fail on any random request that will fly to callback request. Currently there is no way to differentiate
+// it with proper redirect call from Provider.
 func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	s.logger.Print("Debug: Perfoming auth Code flow to obtain entirely new OIDC token.")
 
@@ -179,7 +185,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 
 	// TODO(bplotka): Consider having server up for a whole life of tokenSource.
 	handler := http.NewServeMux()
-	handler.HandleFunc(callbackURL(s.bindURL), CallbackHandler(
+	handler.HandleFunc(callbackURL(s.bindURL), callbackHandler(
 		ctx,
 		s.oidcClient,
 		s.oidcConfig,
@@ -231,6 +237,6 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		}
 		return msg.token, nil
 	case <-ctx.Done():
-		return nil, fmt.Errorf("oidc Deadline Exceeded: Timed out waiting for token. Please retry the command and open the URL printed above in a browser if it doesn't open automatically.")
+		return nil, fmt.Errorf("oidc Deadline Exceeded: Timed out waiting for token. Please retry the command and open the URL printed above in a browser if it doesn't open automatically")
 	}
 }

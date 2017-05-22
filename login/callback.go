@@ -74,10 +74,15 @@ func parseCallbackRequest(form url.Values) (code string, state string, err error
 	return code, state, nil
 }
 
+// OKCallbackResponse is package wide function variable that returns HTTP response on successful OIDC `code` flow.
 var OKCallbackResponse = func(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OIDC authentication flow is completed. You can close browser tab."))
 }
+
+// ErrCallbackResponse is package wide function variable that returns HTTP response on failed OIDC `code` flow.
+// Note that, by default we don't want user to see anything wrong on browser side. All errors are propagated to command.
+// If it is required otherwise, override this function.
 var ErrCallbackResponse = func(w http.ResponseWriter, _ *http.Request, _ error) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OIDC authentication flow is completed. You can close browser tab."))
@@ -99,7 +104,10 @@ func mergeContexts(originalCtx context.Context, oidcCtx context.Context) context
 	return context.WithValue(originalCtx, oidc.HTTPClientCtxKey, oidcCtx.Value(oidc.HTTPClientCtxKey))
 }
 
-func CallbackHandler(
+// callbackHandler handles redirect from OIDC provider with either code or error parameters.
+// In case of valid code with corresponded state it will perform token exchange with OIDC provider.
+// Any message is propagated via Go channel.
+func callbackHandler(
 	oidcCtx context.Context,
 	oidcClient *oidc.Client,
 	oidcConfig oidc.Config,

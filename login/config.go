@@ -6,6 +6,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// Config is a login configuration. It is similar to standard oidc.Config, except bind field that sets the address
+// callback server can listen on.
 type Config struct {
 	// The base path of local server for OIDC callback. This is the base for redirectURL that all clients MUST register
 	// first on the OIDC server. It can point to localhost. E.g http://127.0.0.1 -> redirectURL: http://127.0.0.1/callback
@@ -23,6 +25,7 @@ type Config struct {
 	NonceCheck bool     `yaml:"include_nonce"`
 }
 
+// ConfigFromYaml parses config from yaml file.
 func ConfigFromYaml(yamlContent []byte) (Config, error) {
 	var c Config
 	if err := yaml.Unmarshal(yamlContent, &c); err != nil {

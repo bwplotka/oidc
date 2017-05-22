@@ -63,8 +63,8 @@ func (s *TokenSourceTestSuite) validIDToken(nonce string) (idToken string, jwkSe
 	token, err := builder.JWS().Claims(&oidc.IDToken{
 		Issuer:   testIssuer,
 		Nonce:    nonce,
-		Expiry:   jwt.NewNumericDate(issuedAt.Add(1 * time.Hour)),
-		IssuedAt: jwt.NewNumericDate(issuedAt),
+		Expiry:   oidc.NewNumericDate(issuedAt.Add(1 * time.Hour)),
+		IssuedAt: oidc.NewNumericDate(issuedAt),
 		Subject:  "subject1",
 		Audience: oidc.Audience([]string{testClientID}),
 	}).CompactSerialize()
@@ -210,10 +210,10 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 			IDToken:      testToken.IDToken,
 			TokenType:    "Bearer",
 		}
-		tokenJson, err := json.Marshal(t)
+		tokenJSON, err := json.Marshal(t)
 		s.Require().NoError(err)
 
-		s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJson))
+		s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
 		bindURL, err := url.Parse(testBindAddress)
 		s.Require().NoError(err)
@@ -294,10 +294,10 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 		IDToken:      expectedToken.IDToken,
 		TokenType:    "Bearer",
 	}
-	tokenJson, err := json.Marshal(t)
+	tokenJSON, err := json.Marshal(t)
 	s.Require().NoError(err)
 
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJson))
+	s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
 	// For 2th verification inside reuse TokenSource.
 	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON2))
@@ -306,6 +306,33 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	s.Require().NoError(err)
 
 	s.Equal(expectedToken, *token)
+
+	s.cache.AssertExpectations(s.T())
+	s.Equal(0, s.s.Len())
+}
+
+func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_OK() {
+	idToken, jwkSetJSON := s.validIDToken("wrongNonce")
+	invalidToken := testToken
+	invalidToken.IDToken = idToken
+	s.cache.On("Token").Return(&invalidToken, nil)
+	s.cache.On("SetToken", &testToken).Return(nil)
+
+	// For first verification inside OIDC TokenSource.
+	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
+
+	s.s.Push(rt.JSONResponseFunc(http.StatusBadRequest, []byte(`{"error": "bad_request"}`)))
+
+	const expectedWord = "secret_token"
+	s.oidcSource.genRandToken = func() string {
+		return expectedWord
+	}
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
+
+	token, err := s.oidcSource.OIDCToken()
+	s.Require().NoError(err)
+
+	s.Equal(testToken, *token)
 
 	s.cache.AssertExpectations(s.T())
 	s.Equal(0, s.s.Len())
