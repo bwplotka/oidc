@@ -1,4 +1,5 @@
 # oidc
+[![Build Status](https://travis-ci.org/Bplotka/oidc.svg?branch=master)](https://travis-ci.org/Bplotka/oidc) [![Go Report Card](https://goreportcard.com/badge/github.com/Bplotka/oidc)](https://goreportcard.com/report/github.com/Bplotka/oidc)
 
 Golang Open ID Connect (OIDC) client library.
 
