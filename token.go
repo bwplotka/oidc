@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
-
-	"github.com/Bplotka/go-jwt"
-	"k8s.io/kubernetes/staging/src/k8s.io/client-go/_vendor/github.com/davecgh/go-spew/spew"
 )
 
 // expiryDelta determines how earlier a token should be considered
@@ -49,7 +47,7 @@ type Token struct {
 func (t Token) Claims(ctx context.Context, verifier Verifier, v interface{}) error {
 	idToken, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
-		return fmt.Errorf("cannot get claims. Failed to verify and parse IDToken. Err: %v.", err)
+		return fmt.Errorf("cannot get claims. Failed to verify and parse IDToken. Err: %v", err)
 	}
 
 	return idToken.Claims(v)
@@ -72,7 +70,6 @@ func (t *Token) accessTokenExpired() bool {
 func (t *Token) Valid(ctx context.Context, verifier Verifier) bool {
 	idToken, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
-		spew.Dump(err)
 		return false
 	}
 
@@ -97,19 +94,16 @@ type IDToken struct {
 
 	// The client ID, or set of client IDs, that this token is issued for. For
 	// common uses, this is the client that initialized the auth flow.
-	//
-	// This package ensures the Audience contains an expected value.
-	Audience Audience `json:"aud"`
+	Audience []string `json:"aud"`
 
 	// A unique string which identifies the end user.
 	Subject string `json:"sub"`
 
-	// Expiry of the token. Ths package will not process tokens that have
-	// expired unless that validation is explicitly turned off.
-	Expiry jwt.NumericDate `json:"exp"`
+	// Expiry of the token.
+	Expiry NumericDate `json:"exp"`
 
 	// When the token was issued by the provider.
-	IssuedAt jwt.NumericDate `json:"iat"`
+	IssuedAt NumericDate `json:"iat"`
 
 	// Initial nonce provided during the authentication redirect.
 	//
@@ -141,25 +135,43 @@ func (i *IDToken) Claims(v interface{}) error {
 	return json.Unmarshal(i.claims, v)
 }
 
-type Audience []string
+// NumericDate represents date and time as the number of seconds since the
+// epoch, including leap seconds. Non-integer values can be represented
+// in the serialized format, but we round to the nearest second.
+type NumericDate int64
 
-func (a *Audience) UnmarshalJSON(b []byte) error {
-	var s string
-	if json.Unmarshal(b, &s) == nil {
-		*a = Audience{s}
-		return nil
+// NewNumericDate constructs NumericDate from time.Time value.
+func NewNumericDate(t time.Time) NumericDate {
+	if t.IsZero() {
+		return NumericDate(0)
 	}
-	var auds []string
-	if err := json.Unmarshal(b, &auds); err != nil {
-		return err
+
+	// While RFC 7519 technically states that NumericDate values may be
+	// non-integer values, we don't bother serializing timestamps in
+	// claims with sub-second accuracy and just round to the nearest
+	// second instead.
+	return NumericDate(t.Unix())
+}
+
+// MarshalJSON serializes the given NumericDate into its JSON representation.
+func (n NumericDate) MarshalJSON() ([]byte, error) {
+	return []byte(strconv.FormatInt(int64(n), 10)), nil
+}
+
+// UnmarshalJSON reads a date from its JSON representation.
+func (n *NumericDate) UnmarshalJSON(b []byte) error {
+	s := string(b)
+
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshall NumericDate. Err: %v", err)
 	}
-	*a = Audience(auds)
+
+	*n = NumericDate(f)
 	return nil
 }
 
-func (a Audience) MarshalJSON() ([]byte, error) {
-	if len(a) == 1 {
-		return json.Marshal(a[0])
-	}
-	return json.Marshal([]string(a))
+// Time returns time.Time representation of NumericDate.
+func (n NumericDate) Time() time.Time {
+	return time.Unix(int64(n), 0)
 }

@@ -19,10 +19,10 @@ func (s *ClientTestSuite) validIDToken() (idToken string, jwkSetJSON []byte) {
 	token, err := builder.JWS().Claims(&IDToken{
 		Issuer:   exampleIssuer,
 		Nonce:    "nonce1",
-		Expiry:   jwt.NewNumericDate(issuedAt.Add(1 * time.Hour)),
-		IssuedAt: jwt.NewNumericDate(issuedAt),
+		Expiry:   NewNumericDate(issuedAt.Add(1 * time.Hour)),
+		IssuedAt: NewNumericDate(issuedAt),
 		Subject:  "subject1",
-		Audience: Audience([]string{"client1"}),
+		Audience: []string{"client1"},
 	}).CompactSerialize()
 	s.NoError(err)
 

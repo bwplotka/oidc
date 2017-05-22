@@ -30,7 +30,7 @@ type ReuseTokenSource struct {
 	t   *Token
 }
 
-// ReuseTokenSource returns a TokenSource which repeatedly returns the
+// NewReuseTokenSource returns a TokenSource which repeatedly returns the
 // same token as long as it's valid, starting with t.
 // When its cached token is invalid, a new token is obtained from source.
 func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) TokenSource {
@@ -58,6 +58,7 @@ func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
 	return t, nil
 }
 
+// Verifier returns verifier from underlying token source.
 func (s *ReuseTokenSource) Verifier() Verifier {
 	return s.new.Verifier()
 }
@@ -73,6 +74,7 @@ type TokenRefresher struct {
 	cfg Config
 }
 
+// NewTokenRefresher constructs token refresher.
 func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) TokenSource {
 	return &TokenRefresher{
 		ctx:          ctx,
@@ -82,7 +84,7 @@ func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshT
 	}
 }
 
-// WARNING: Token is not safe for concurrent access, as it
+// OIDCToken is not safe for concurrent access, as it
 // updates the tokenRefresher's refreshToken field.
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
@@ -112,6 +114,7 @@ func (tf *TokenRefresher) OIDCToken() (*Token, error) {
 	return tk, err
 }
 
+// Verifier returns verifier for ID Token.
 func (tf *TokenRefresher) Verifier() Verifier {
 	return tf.client.Verifier(VerificationConfig{ClientID: tf.cfg.ClientID})
 }
@@ -128,10 +131,12 @@ type staticTokenSource struct {
 	t *Token
 }
 
+// OIDCToken returns saved pointer to token.
 func (s staticTokenSource) OIDCToken() (*Token, error) {
 	return s.t, nil
 }
 
+// Verifier returns nil, since it is static.
 func (s staticTokenSource) Verifier() Verifier {
 	return nil
 }

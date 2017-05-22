@@ -3,7 +3,7 @@ package login
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v2"
+	"github.com/ghodss/yaml"
 )
 
 // Config is a login configuration. It is similar to standard oidc.Config, except bind field that sets the address

@@ -34,6 +34,8 @@ const (
 	DiscoveryEndpoint = "/.well-known/openid-configuration"
 )
 
+// HTTPClientCtxKey is Context key which is used to fetch custom HTTP.Client.
+// Used to pass special HTTP client (e.g with non-default timeout) or for tests.
 var HTTPClientCtxKey struct{}
 
 // doRequest performs HTTP request using Default client or client given by context like this:
@@ -48,6 +50,7 @@ func doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
 	return client.Do(req.WithContext(ctx))
 }
 
+// Config is client configuration that contains all required client details to communicate with OIDC server.
 type Config struct {
 	ClientID     string
 	ClientSecret string
@@ -55,7 +58,7 @@ type Config struct {
 	Scopes       []string
 }
 
-// Client represents an OpenID Connect server's configuration.
+// Client represents an OpenID Connect client.
 type Client struct {
 	issuer string
 
@@ -73,6 +76,7 @@ type cachedKeys struct {
 	expiry time.Time
 }
 
+// DiscoveryJSON is structure expected by Discovery endpoint.
 type DiscoveryJSON struct {
 	Issuer        string `json:"issuer"`
 	AuthURL       string `json:"authorization_endpoint"`
@@ -116,6 +120,7 @@ func NewClient(ctx context.Context, issuer string) (*Client, error) {
 	}, nil
 }
 
+// Discovery returns standard discovery fields held by OIDC provider we point to.
 func (c *Client) Discovery() DiscoveryJSON {
 	return c.discovery
 }
@@ -127,7 +132,7 @@ func (c *Client) Discovery() DiscoveryJSON {
 //        ClaimsSupported []string `json:"claims_supported"`
 //    }
 //
-//    if err := provider.Claims(&claims); err != nil {
+//    if err := client.Claims(&claims); err != nil {
 //        // handle unmarshaling error
 //    }
 //
@@ -204,6 +209,8 @@ func (c *Client) Verifier(cfg VerificationConfig) *IDTokenVerifier {
 	return newVerifier(c.remoteKeySet, cfg, c.issuer)
 }
 
+// Revoke revokes provided token. It can be access token or refresh token. In most, revoking access token will
+// revoke refresh token which can be convenient. (Valid e.g for Google OIDC).
 func (c *Client) Revoke(ctx context.Context, cfg Config, token string) error {
 	v := url.Values{}
 	v.Set("token", token)
@@ -273,12 +280,6 @@ func (c *Client) AuthCodeURL(cfg Config, state string, extra ...url.Values) stri
 //
 // It is used after a resource provider redirects the user back
 // to the Redirect URI (the URL obtained from AuthCodeURL).
-//
-// The HTTP client to use is derived from the context.
-// If a client is not provided via the context, http.DefaultClient is used.
-//
-// The code will be in the *http.Request.FormValue("code"). Before
-// calling Exchange, be sure to validate FormValue("state").
 func (c *Client) Exchange(ctx context.Context, cfg Config, code string, extra ...url.Values) (*Token, error) {
 	v := url.Values{
 		"grant_type":   {GrantTypeAuthCode},
@@ -310,6 +311,7 @@ func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSou
 	return NewReuseTokenSource(ctx, t, tkr)
 }
 
+// token fetches token from OIDC token endpoint with provided URL values.
 func (c *Client) token(ctx context.Context, clientID string, clientSecret string, v url.Values) (*Token, error) {
 	req, err := http.NewRequest("POST", c.discovery.TokenURL, strings.NewReader(v.Encode()))
 	if err != nil {
@@ -371,13 +373,14 @@ type TokenResponse struct {
 	TokenType   string `json:"token_type"`
 	IDToken     string `json:"id_token"`
 
-	ExpiresIn    ExpirationTime `json:"expires_in,omitempty"` // at least PayPal returns string, while most return number
+	ExpiresIn    expirationTime `json:"expires_in,omitempty"` // at least PayPal returns string, while most return number
 	RefreshToken string         `json:"refresh_token,omitempty"`
 	Scope        string         `json:"scope,omitempty"`
 }
 
+// SetExpiry sets expiry in form of time.
 func (r *TokenResponse) SetExpiry(expiry time.Time) {
-	r.ExpiresIn = ExpirationTime(time.Now().Sub(expiry).Seconds())
+	r.ExpiresIn = expirationTime(time.Now().Sub(expiry).Seconds())
 }
 
 func (r *TokenResponse) expiry() time.Time {
@@ -387,8 +390,9 @@ func (r *TokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
+// brokenTokenResponse represents response that is not compliant with OIDC.
 type brokenTokenResponse struct {
-	Expires ExpirationTime `json:"expires"` // broken Facebook spelling of expires_in
+	Expires expirationTime `json:"expires"` // broken Facebook spelling of expires_in
 }
 
 func (r *brokenTokenResponse) expiry() time.Time {
@@ -398,14 +402,16 @@ func (r *brokenTokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
-type ExpirationTime int32
+type expirationTime int32
 
-func (e *ExpirationTime) MarshalJSON() ([]byte, error) {
+// MarshalJSON marshals expiration time to JSON.
+func (e *expirationTime) MarshalJSON() ([]byte, error) {
 	n := json.Number(*e)
 	return json.Marshal(n)
 }
 
-func (e *ExpirationTime) UnmarshalJSON(b []byte) error {
+// MarshalJSON unmarshals expiration time from JSON.
+func (e *expirationTime) UnmarshalJSON(b []byte) error {
 	var n json.Number
 	err := json.Unmarshal(b, &n)
 	if err != nil {
@@ -415,6 +421,6 @@ func (e *ExpirationTime) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*e = ExpirationTime(i)
+	*e = expirationTime(i)
 	return nil
 }

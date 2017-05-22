@@ -66,7 +66,7 @@ func (s *TokenSourceTestSuite) validIDToken(nonce string) (idToken string, jwkSe
 		Expiry:   oidc.NewNumericDate(issuedAt.Add(1 * time.Hour)),
 		IssuedAt: oidc.NewNumericDate(issuedAt),
 		Subject:  "subject1",
-		Audience: oidc.Audience([]string{testClientID}),
+		Audience: []string{testClientID},
 	}).CompactSerialize()
 	s.Require().NoError(err)
 
