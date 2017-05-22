@@ -53,7 +53,7 @@ type K8sConfig struct {
 	Users []*K8sUser `json:"users"`
 }
 
-// K8sUser hods information about particular user.
+// K8sUser holds information about particular user.
 type K8sUser struct {
 	Name string       `json:"name"`
 	User *K8sAuthInfo `json:"user"`
@@ -200,48 +200,10 @@ func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
 			" permissions. Err: %v", path, err)
 	}
 
-	k8sConfig := &K8sConfig{}
-	err = yaml.Unmarshal(file, k8sConfig)
-	if err != nil {
-		return fmt.Errorf("Failed to unmarshal k8s config to expected struct. Err: %v", err)
-	}
-
-	processedUsers := map[string]struct{}{}
-	for i, user := range k8sConfig.Users {
-		if _, ok := c.users[user.Name]; !ok {
-			continue
-		}
-
-		// Always override with correct values.
-		validUser := &K8sUser{
-			Name: user.Name,
-			User: &K8sAuthInfo{
-				AuthProvider: &K8sAuthProviderConfig{
-					Name: "oidc",
-					Config: map[string]string{
-						"idp-issuer-url": c.loginCfg.Provider,
-						"client-id":      c.loginCfg.ClientID,
-						"client-secret":  c.loginCfg.ClientSecret,
-						"extra-scopes":   strings.Join(extraScopes(c.loginCfg), ","),
-
-						"refresh-token": token.RefreshToken,
-						"id-token":      token.IDToken,
-					},
-				},
-			},
-		}
-		k8sConfig.Users[i] = validUser
-		processedUsers[user.Name] = struct{}{}
-	}
-
+	// Prepare lookup map of valid users.
+	validUsers := map[string]*K8sAuthInfo{}
 	for userName := range c.users {
-		if _, ok := processedUsers[userName]; ok {
-			continue
-		}
-
-		validUser := &K8sUser{
-			Name: userName,
-			User: &K8sAuthInfo{
+		validUser := &K8sAuthInfo{
 				AuthProvider: &K8sAuthProviderConfig{
 					Name: "oidc",
 					Config: map[string]string{
@@ -254,12 +216,11 @@ func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
 						"id-token":      token.IDToken,
 					},
 				},
-			},
 		}
-		k8sConfig.Users = append(k8sConfig.Users, validUser)
+		validUsers[userName] = validUser
 	}
 
-	mergedConfig, err := merge(file, k8sConfig)
+	mergedConfig, err := mergeUsers(file, validUsers)
 	if err != nil {
 		return err
 	}
@@ -267,28 +228,42 @@ func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
 	return ioutil.WriteFile(path, mergedConfig, os.ModePerm)
 }
 
-func merge(original []byte, new *K8sConfig) ([]byte, error) {
-	marshaled, err := yaml.Marshal(new)
+// K8sConfigRaw includes raw version of config for merge only.
+type K8sConfigRaw struct {
+	Users []*K8sUserRaw `json:"users"`
+}
+
+// K8sUserRaw holds information about particular user.
+type K8sUserRaw struct {
+	Name string      `json:"name"`
+	User interface{} `json:"user"`
+}
+
+func mergeUsers(original []byte, users map[string]*K8sAuthInfo) ([]byte, error) {
+	originalUsers := K8sConfigRaw{}
+	err := yaml.Unmarshal(original, &originalUsers)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to marshall k8s config. Err: %v", err)
+		return nil, fmt.Errorf("Failed to unmarshal k8s raw user config from file. Err: %v", err)
 	}
 
-	newRaw := map[string]interface{}{}
-	err = yaml.Unmarshal(marshaled, &newRaw)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal k8s config from marshalled version. Err: %v", err)
+	// Merge users.
+	for i, user := range originalUsers.Users {
+		newUser, ok := users[user.Name]
+		if !ok {
+			continue
+		}
+		// Override user.
+		originalUsers.Users[i].User = newUser
 	}
 
+	// Having proper user list we can pack it inside upper structure.
 	originalRaw := map[string]interface{}{}
 	err = yaml.Unmarshal(original, &originalRaw)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal k8s config from file. Err: %v", err)
+		return nil, fmt.Errorf("Failed to unmarshal k8s raw config from file. Err: %v", err)
 	}
 
-	// Merge these two.
-	for key := range newRaw {
-		originalRaw[key] = newRaw[key]
-	}
+	originalRaw["users"] = originalUsers.Users
 
 	merged, err := yaml.Marshal(originalRaw)
 	if err != nil {

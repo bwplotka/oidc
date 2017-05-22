@@ -1,3 +1,8 @@
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://master.com:2222
+  name: cluster1
 current-context: cluster1
 kind: Config
 preferences: {}
@@ -24,7 +29,7 @@ users:
         idp-issuer-url: https://example.org
         refresh-token: refresh_token2
       name: oidc
-- name: something1
+- name: some-access1
   user:
     auth-provider:
       config:
@@ -33,3 +38,6 @@ users:
         expiry-key: '{.credential.token_expiry}'
         token-key: '{.credential.access_token}'
       name: gcp
+- name: some-access2
+  user:
+    token: passssssword

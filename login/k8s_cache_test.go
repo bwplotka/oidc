@@ -136,6 +136,8 @@ func TestK8sCache_SetToken(t *testing.T) {
 		"cluster2-access",
 	)
 
+	// Test that all token can be applied to all types of existing configuration.
+	// It also makes sure that not relevant users are not overridden.
 	test := func(inputCfgPath string) {
 		t.Logf("Testing %s", inputCfgPath)
 		cache.kubeConfigPath = "test-data/tmp-" + rand128Bits()
@@ -168,7 +170,7 @@ func TestK8sCache_SetToken(t *testing.T) {
 		"test-data/wrong_scopes_config.yaml",
 		"test-data/wrong_idp_config.yaml",
 		"test-data/diff_refreshtoken_config.yaml",
-		//"test-data/not_all_users_config.yaml", This needs to be excluded - we are not quarantining any order.
+		// "test-data/not_all_users_config.yaml", This needs to be excluded - we are not quarantining any order.
 		"test-data/ok_config.yaml",
 	} {
 		test(inputCfgPath)
