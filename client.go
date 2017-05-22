@@ -297,8 +297,8 @@ func (c *Client) Exchange(ctx context.Context, cfg Config, code string, extra ..
 
 // TokenSource returns a TokenSource that returns t until t expires,
 // automatically refreshing it as necessary using the provided context.
-func (c *Client) TokenSource(ctx context.Context, cfg Config, vcfg VerificationConfig, t *Token) TokenSource {
-	tkr := &tokenRefresher{
+func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSource {
+	tkr := &TokenRefresher{
 		ctx: ctx,
 
 		client: c,
@@ -307,7 +307,7 @@ func (c *Client) TokenSource(ctx context.Context, cfg Config, vcfg VerificationC
 	if t != nil {
 		tkr.refreshToken = t.RefreshToken
 	}
-	return NewReuseTokenSource(t, tkr)
+	return NewReuseTokenSource(ctx, t, tkr)
 }
 
 func (c *Client) token(ctx context.Context, clientID string, clientSecret string, v url.Values) (*Token, error) {
@@ -371,13 +371,13 @@ type TokenResponse struct {
 	TokenType   string `json:"token_type"`
 	IDToken     string `json:"id_token"`
 
-	ExpiresIn    expirationTime `json:"expires_in,omitempty"` // at least PayPal returns string, while most return number
+	ExpiresIn    ExpirationTime `json:"expires_in,omitempty"` // at least PayPal returns string, while most return number
 	RefreshToken string         `json:"refresh_token,omitempty"`
 	Scope        string         `json:"scope,omitempty"`
 }
 
 func (r *TokenResponse) SetExpiry(expiry time.Time) {
-	r.ExpiresIn = expirationTime(time.Now().Sub(expiry).Seconds())
+	r.ExpiresIn = ExpirationTime(time.Now().Sub(expiry).Seconds())
 }
 
 func (r *TokenResponse) expiry() time.Time {
@@ -388,7 +388,7 @@ func (r *TokenResponse) expiry() time.Time {
 }
 
 type brokenTokenResponse struct {
-	Expires expirationTime `json:"expires"` // broken Facebook spelling of expires_in
+	Expires ExpirationTime `json:"expires"` // broken Facebook spelling of expires_in
 }
 
 func (r *brokenTokenResponse) expiry() time.Time {
@@ -398,14 +398,14 @@ func (r *brokenTokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
-type expirationTime int32
+type ExpirationTime int32
 
-func (e *expirationTime) MarshalJSON() ([]byte, error) {
+func (e *ExpirationTime) MarshalJSON() ([]byte, error) {
 	n := json.Number(*e)
 	return json.Marshal(n)
 }
 
-func (e *expirationTime) UnmarshalJSON(b []byte) error {
+func (e *ExpirationTime) UnmarshalJSON(b []byte) error {
 	var n json.Number
 	err := json.Unmarshal(b, &n)
 	if err != nil {
@@ -415,6 +415,6 @@ func (e *expirationTime) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*e = expirationTime(i)
+	*e = ExpirationTime(i)
 	return nil
 }

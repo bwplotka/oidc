@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/Bplotka/go-jwt"
+	"k8s.io/kubernetes/staging/src/k8s.io/client-go/_vendor/github.com/davecgh/go-spew/spew"
 )
 
 // expiryDelta determines how earlier a token should be considered
@@ -69,10 +72,11 @@ func (t *Token) accessTokenExpired() bool {
 func (t *Token) Valid(ctx context.Context, verifier Verifier) bool {
 	idToken, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
+		spew.Dump(err)
 		return false
 	}
 
-	return t != nil && t.AccessToken != "" && !t.accessTokenExpired() && idToken.Expiry.Add(-expiryDelta).After(time.Now())
+	return t != nil && t.AccessToken != "" && !t.accessTokenExpired() && idToken.Expiry.Time().Add(-expiryDelta).After(time.Now())
 }
 
 // IDToken is an OpenID Connect extension that provides a predictable representation
@@ -89,28 +93,28 @@ type IDToken struct {
 	// this value may differ when using Google.
 	//
 	// See: https://developers.google.com/identity/protocols/OpenIDConnect#obtainuserinfo
-	Issuer string
+	Issuer string `json:"iss"`
 
 	// The client ID, or set of client IDs, that this token is issued for. For
 	// common uses, this is the client that initialized the auth flow.
 	//
-	// This package ensures the audience contains an expected value.
-	Audience []string
+	// This package ensures the Audience contains an expected value.
+	Audience Audience `json:"aud"`
 
 	// A unique string which identifies the end user.
-	Subject string
+	Subject string `json:"sub"`
 
 	// Expiry of the token. Ths package will not process tokens that have
 	// expired unless that validation is explicitly turned off.
-	Expiry time.Time
+	Expiry jwt.NumericDate `json:"exp"`
 
 	// When the token was issued by the provider.
-	IssuedAt time.Time
+	IssuedAt jwt.NumericDate `json:"iat"`
 
 	// Initial nonce provided during the authentication redirect.
 	//
 	// If present, this package ensures this is a valid nonce.
-	Nonce string
+	Nonce string `json:"nonce"`
 
 	// Raw payload of the id_token.
 	claims []byte
@@ -137,60 +141,25 @@ func (i *IDToken) Claims(v interface{}) error {
 	return json.Unmarshal(i.claims, v)
 }
 
-type idToken struct {
-	Issuer   string   `json:"iss"`
-	Subject  string   `json:"sub"`
-	Audience audience `json:"aud"`
-	Expiry   jsonTime `json:"exp"`
-	IssuedAt jsonTime `json:"iat"`
-	Nonce    string   `json:"nonce"`
-}
+type Audience []string
 
-type audience []string
-
-func (a *audience) UnmarshalJSON(b []byte) error {
+func (a *Audience) UnmarshalJSON(b []byte) error {
 	var s string
 	if json.Unmarshal(b, &s) == nil {
-		*a = audience{s}
+		*a = Audience{s}
 		return nil
 	}
 	var auds []string
 	if err := json.Unmarshal(b, &auds); err != nil {
 		return err
 	}
-	*a = audience(auds)
+	*a = Audience(auds)
 	return nil
 }
 
-func (a audience) MarshalJSON() ([]byte, error) {
+func (a Audience) MarshalJSON() ([]byte, error) {
 	if len(a) == 1 {
 		return json.Marshal(a[0])
 	}
 	return json.Marshal([]string(a))
-}
-
-type jsonTime time.Time
-
-func (j *jsonTime) UnmarshalJSON(b []byte) error {
-	var n json.Number
-	if err := json.Unmarshal(b, &n); err != nil {
-		return err
-	}
-	var unix int64
-
-	if t, err := n.Int64(); err == nil {
-		unix = t
-	} else {
-		f, err := n.Float64()
-		if err != nil {
-			return err
-		}
-		unix = int64(f)
-	}
-	*j = jsonTime(time.Unix(unix, 0))
-	return nil
-}
-
-func (j jsonTime) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(j).Unix())
 }

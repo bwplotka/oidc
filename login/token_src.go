@@ -44,7 +44,8 @@ type OIDCTokenSource struct {
 	bindURL *url.URL
 	cfg     Config
 
-	openBrowser func(string) error
+	openBrowser  func(string) error
+	genRandToken func() string
 }
 
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
@@ -72,13 +73,18 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		oidcClient: oidcClient,
 		oidcConfig: oidcConfig,
 
-		tokenCache: tokenCache,
-		cfg:        cfg,
-		bindURL:    bindURL,
-		openBrowser: openBrowser,
+		tokenCache:   tokenCache,
+		cfg:          cfg,
+		bindURL:      bindURL,
+		openBrowser:  openBrowser,
+		genRandToken: rand128Bits,
 	}
 
-	return oidc.NewReuseTokenSource(nil, s), nil
+	if cfg.NonceCheck {
+		s.nonce = rand128Bits()
+	}
+
+	return oidc.NewReuseTokenSource(ctx, nil, s), nil
 }
 
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
@@ -87,34 +93,28 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	cachedToken, err := s.tokenCache.Token()
 	if err != nil {
 		s.logger.Printf("Error: Failed to get cached token. Caching might be broken. Err: %v", err)
-
 	} else if cachedToken != nil {
-		if cachedToken.Valid(s.ctx, s.oidcClient.Verifier(
-			oidc.VerificationConfig{
-				ClientID:   s.cfg.ClientID,
-				ClaimNonce: s.nonce,
-			},
-		)) {
+		if cachedToken.Valid(s.ctx, s.Verifier()) {
 			// Successfully retrieved a non-expired cached token and only if we have ID token as well.
 			return cachedToken, nil
 		}
 
 		if cachedToken.RefreshToken != "" {
 			// Only if we have refresh token, we can refresh IDToken.
-			oidcToken, err := s.refreshToken(cachedToken)
+			oidcToken, err := s.refreshToken(cachedToken.RefreshToken)
 			if err == nil {
 				return oidcToken, nil
 			}
 
 			// Our refresh token expired.
-			s.logger.Print("Warn: Refresh token expired.")
+			s.logger.Printf("Warn: Refresh token expired. Err: %v", err)
 		}
 	}
 
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
 	newToken, err := s.newToken()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to obtain new refresh token. Err: %v", err)
+		return nil, fmt.Errorf("Failed to obtain new token. Err: %v", err)
 	}
 
 	return newToken, nil
@@ -122,26 +122,26 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 
 func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 	return s.oidcClient.Verifier(oidc.VerificationConfig{
-		ClientID: s.oidcConfig.ClientID,
+		ClientID:   s.oidcConfig.ClientID,
+		ClaimNonce: s.nonce,
 	})
 }
 
-func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, error) {
-	ctx := oidcContextWithTimeout(s.ctx)
-
+func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error) {
 	s.logger.Printf("Debug: Cached token has none or expired ID token or access token. " +
 		"Try to refresh access token using refresh token.")
-	token, err := s.oidcClient.TokenSource(
-		ctx,
+
+	token, err := oidc.NewTokenRefresher(
+		s.ctx,
+		s.oidcClient,
 		s.oidcConfig,
-		oidc.VerificationConfig{ClientID: s.cfg.ClientID},
-		invalidToken,
+		refreshToken,
 	).OIDCToken()
 	if err != nil {
 		return nil, err
 	}
 
-	if !token.Valid(s.ctx, s.oidcClient.Verifier(oidc.VerificationConfig{ClientID: s.cfg.ClientID})) {
+	if !token.Valid(s.ctx, s.Verifier()) {
 		return nil, fmt.Errorf("got invalid idToken from provider.")
 	}
 
@@ -151,19 +151,6 @@ func (s *OIDCTokenSource) refreshToken(invalidToken *oidc.Token) (*oidc.Token, e
 	}
 
 	return token, nil
-}
-
-func oidcContextWithTimeout(ctx context.Context) context.Context {
-	if existing := ctx.Value(oidc.HTTPClientCtxKey); existing != nil {
-		return ctx
-	}
-	timeout := 10 * time.Second
-	if deadline, exists := ctx.Deadline(); exists {
-		timeout = deadline.Sub(time.Now())
-	}
-	return context.WithValue(ctx, oidc.HTTPClientCtxKey, http.Client{
-		Timeout: timeout,
-	})
 }
 
 func (s *OIDCTokenSource) prefixPath() string {
@@ -176,21 +163,24 @@ func (s *OIDCTokenSource) prefixPath() string {
 func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	s.logger.Print("Debug: Perfoming auth Code flow to obtain entirely new OIDC token.")
 
-	callbackChan := make(chan *callbackMsg, 100)
+	callbackChan := make(chan *callbackMsg, 1)
+	srvClosed := make(chan struct{}, 1)
 
-	state := rand128Bits()
+	state := s.genRandToken()
 	nonce := ""
 	extra := url.Values{}
 	if s.cfg.NonceCheck {
-		nonce = rand128Bits()
+		nonce = s.genRandToken()
 		extra.Set("nonce", nonce)
 	}
 
 	ctx, cancel := context.WithTimeout(s.ctx, 1*time.Minute)
 	defer cancel()
 
+	// TODO(bplotka): Consider having server up for a whole life of tokenSource.
 	handler := http.NewServeMux()
 	handler.HandleFunc(callbackURL(s.bindURL), CallbackHandler(
+		ctx,
 		s.oidcClient,
 		s.oidcConfig,
 		state,
@@ -203,6 +193,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		if err != nil {
 			s.logger.Printf("Warn: Callback server fail: %v", err)
 		}
+		srvClosed <- struct{}{}
 		cancel()
 	}()
 	defer func() {
@@ -211,10 +202,10 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	}()
 
 	authURL := s.oidcClient.AuthCodeURL(s.oidcConfig, state, extra)
-
+	s.logger.Printf("Info: Opening browser to access URL: %s", authURL)
 	err := s.openBrowser(authURL)
 	if err != nil {
-		return nil, fmt.Errorf("oidc: Failed to open browser. Err: %v", err)
+		return nil, fmt.Errorf("oidc: Failed to open browser. Please open this URL in browser: %s Err: %v", authURL, err)
 	}
 
 	quit := make(chan os.Signal)
@@ -227,6 +218,8 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	select {
 	// TODO(bplotka): What if someone will scan our callback endpoint?
 	case msg := <-callbackChan:
+		// Give some time for server to finish request.
+		time.Sleep(200 * time.Millisecond)
 		if msg.err != nil {
 			return nil, fmt.Errorf("oidc: Callback error: %v", msg.err)
 		}
@@ -236,7 +229,6 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		if err != nil {
 			s.logger.Printf("Warn: Cannot cache token. Err: %v", err)
 		}
-
 		return msg.token, nil
 	case <-ctx.Done():
 		return nil, fmt.Errorf("oidc Deadline Exceeded: Timed out waiting for token. Please retry the command and open the URL printed above in a browser if it doesn't open automatically.")

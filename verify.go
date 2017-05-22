@@ -37,7 +37,7 @@ type IDTokenVerifier struct {
 
 // VerificationConfig is the configuration for an IDTokenVerifier.
 type VerificationConfig struct {
-	// Expected audience of the token. For a majority of the cases this is expected to be
+	// Expected Audience of the token. For a majority of the cases this is expected to be
 	// the ID of the client that initialized the login flow. It may occasionally differ if
 	// the provider supports the authorizing party (azp) claim.
 	//
@@ -120,37 +120,29 @@ func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDTok
 	if err != nil {
 		return nil, fmt.Errorf("oidc: malformed jwt: %v", err)
 	}
-	var token idToken
+	var token IDToken
 	if err := json.Unmarshal(payload, &token); err != nil {
 		return nil, fmt.Errorf("oidc: failed to unmarshal claims: %v", err)
 	}
 
-	t := &IDToken{
-		Issuer:   token.Issuer,
-		Subject:  token.Subject,
-		Audience: []string(token.Audience),
-		Expiry:   time.Time(token.Expiry),
-		IssuedAt: time.Time(token.IssuedAt),
-		Nonce:    token.Nonce,
-		claims:   payload,
-	}
+	token.claims = payload
 
 	// Check issuer.
-	if t.Issuer != v.issuer {
+	if token.Issuer != v.issuer {
 		// Google sometimes returns "accounts.google.com" as the issuer claim instead of
 		// the required "https://accounts.google.com". Detect this case and allow it only
 		// for Google.
 		//
 		// We will not add hooks to let other providers go off spec like this.
-		if !(v.issuer == issuerGoogleAccounts && t.Issuer == issuerGoogleAccountsNoScheme) {
-			return nil, fmt.Errorf("oidc: id token issued by a different provider, expected %q got %q", v.issuer, t.Issuer)
+		if !(v.issuer == issuerGoogleAccounts && token.Issuer == issuerGoogleAccountsNoScheme) {
+			return nil, fmt.Errorf("oidc: id token issued by a different provider, expected %q got %q", v.issuer, token.Issuer)
 		}
 	}
 
 	// This check DOES NOT ensure that the ClientID is the party to which the ID Token was issued (i.e. Authorized party).
 	if v.cfg.ClientID != "" {
-		if !contains(t.Audience, v.cfg.ClientID) {
-			return nil, fmt.Errorf("oidc: expected audience %q got %q", v.cfg.ClientID, t.Audience)
+		if !contains(token.Audience, v.cfg.ClientID) {
+			return nil, fmt.Errorf("oidc: expected Audience %q got %q", v.cfg.ClientID, token.Audience)
 		}
 	} else {
 		return nil, fmt.Errorf("oidc: Invalid configuration. ClientID must be provided.")
@@ -161,8 +153,8 @@ func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDTok
 		now = v.cfg.Now
 	}
 
-	if t.Expiry.Before(now()) {
-		return nil, fmt.Errorf("oidc: token is expired (Token Expiry: %v)", t.Expiry)
+	if token.Expiry.Time().Before(now()) {
+		return nil, fmt.Errorf("oidc: token is expired (Token Expiry: %v)", token.Expiry)
 	}
 
 	// If a set of required algorithms has been provided, ensure that the signatures use those.
@@ -203,14 +195,14 @@ func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDTok
 		return nil, errors.New("oidc: internal error, payload parsed did not match previous payload")
 	}
 
-	// Check the nonce after we've verified the token. We don't want to allow unverified
+	// Check the nonce after we've verified the token. We don'token want to allow unverified
 	// payloads to trigger a nonce lookup.
 	if v.cfg.ClaimNonce != "" {
-		if t.Nonce != v.cfg.ClaimNonce {
+		if token.Nonce != v.cfg.ClaimNonce {
 			return nil, fmt.Errorf("oidc: Invalid configuration. ClaimNonce must match. Got %s, expected %s",
-				t.Nonce, v.cfg.ClaimNonce)
+				token.Nonce, v.cfg.ClaimNonce)
 		}
 	}
 
-	return t, nil
+	return &token, nil
 }

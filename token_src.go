@@ -33,8 +33,9 @@ type ReuseTokenSource struct {
 // ReuseTokenSource returns a TokenSource which repeatedly returns the
 // same token as long as it's valid, starting with t.
 // When its cached token is invalid, a new token is obtained from source.
-func NewReuseTokenSource(t *Token, src TokenSource) TokenSource {
+func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) TokenSource {
 	return &ReuseTokenSource{
+		ctx: ctx,
 		t:   t,
 		new: src,
 	}
@@ -63,7 +64,7 @@ func (s *ReuseTokenSource) Verifier() Verifier {
 
 // TokenRefresher is a TokenSource that makes "grant_type"=="refresh_token"
 // HTTP requests to renew a token using a RefreshToken.
-type tokenRefresher struct {
+type TokenRefresher struct {
 	ctx context.Context // used to get HTTP requests
 
 	refreshToken string
@@ -72,11 +73,20 @@ type tokenRefresher struct {
 	cfg Config
 }
 
+func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) TokenSource {
+	return &TokenRefresher{
+		ctx:          ctx,
+		refreshToken: refreshToken,
+		client:       client,
+		cfg:          cfg,
+	}
+}
+
 // WARNING: Token is not safe for concurrent access, as it
 // updates the tokenRefresher's refreshToken field.
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
-func (tf *tokenRefresher) OIDCToken() (*Token, error) {
+func (tf *TokenRefresher) OIDCToken() (*Token, error) {
 	if tf.refreshToken == "" {
 		return nil, errors.New("oauth2: token expired and refresh token is not set")
 	}
@@ -102,7 +112,7 @@ func (tf *tokenRefresher) OIDCToken() (*Token, error) {
 	return tk, err
 }
 
-func (tf *tokenRefresher) Verifier() Verifier {
+func (tf *TokenRefresher) Verifier() Verifier {
 	return tf.client.Verifier(VerificationConfig{ClientID: tf.cfg.ClientID})
 }
 

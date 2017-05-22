@@ -1,6 +1,7 @@
 package login
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
@@ -86,18 +87,28 @@ func errRespond(w http.ResponseWriter, r *http.Request, err error, callbackChan 
 	callbackResponse := &callbackMsg{
 		err: err,
 	}
-	callbackChan <- callbackResponse
 	ErrCallbackResponse(w, r, err)
+	callbackChan <- callbackResponse
 	return
 }
 
+func mergeContexts(originalCtx context.Context, oidcCtx context.Context) context.Context {
+	if customClient := originalCtx.Value(oidc.HTTPClientCtxKey); customClient != nil {
+		return originalCtx
+	}
+	return context.WithValue(originalCtx, oidc.HTTPClientCtxKey, oidcCtx.Value(oidc.HTTPClientCtxKey))
+}
+
 func CallbackHandler(
+	oidcCtx context.Context,
 	oidcClient *oidc.Client,
 	oidcConfig oidc.Config,
 	expectedState string,
 	callbackChan chan<- *callbackMsg,
 ) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := mergeContexts(r.Context(), oidcCtx)
+
 		err := r.ParseForm()
 		if err != nil {
 			err := fmt.Errorf("Failed to parse request form. Err: %v", err)
@@ -117,7 +128,7 @@ func CallbackHandler(
 			return
 		}
 
-		oidcToken, err := oidcClient.Exchange(r.Context(), oidcConfig, code)
+		oidcToken, err := oidcClient.Exchange(ctx, oidcConfig, code)
 		if err != nil {
 			errRespond(w, r, err, callbackChan)
 			return
@@ -126,8 +137,8 @@ func CallbackHandler(
 		callbackResponse := &callbackMsg{
 			token: oidcToken,
 		}
-		callbackChan <- callbackResponse
 		OKCallbackResponse(w, r)
+		callbackChan <- callbackResponse
 		return
 	}
 }

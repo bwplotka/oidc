@@ -24,6 +24,7 @@ var testDiscovery = DiscoveryJSON{
 
 type ClientTestSuite struct {
 	suite.Suite
+	testCtx context.Context
 
 	s      *httpt.Server
 	client *Client
@@ -36,6 +37,7 @@ func (s *ClientTestSuite) SetupSuite() {
 	s.s = httpt.NewServer(s.T())
 	s.s.On("GET", exampleIssuer+DiscoveryEndpoint).
 		Push(rt.JSONResponseFunc(http.StatusOK, jsonDiscovery))
+	s.testCtx = context.WithValue(context.TODO(), HTTPClientCtxKey, s.s.HTTPClient())
 
 	s.client, err = NewClient(context.WithValue(context.TODO(), HTTPClientCtxKey, s.s.HTTPClient()), exampleIssuer)
 	s.NoError(err)
