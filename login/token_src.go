@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -193,9 +194,12 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		callbackChan,
 	))
 
-	server := &http.Server{Addr: s.bindURL.Host, Handler: handler}
+	listener, err := net.Listen("tcp", s.bindURL.Host)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to Listen for tcp on: %s. Err: %v", s.bindURL.Host, err)
+	}
 	go func() {
-		err := server.ListenAndServe()
+		err := http.Serve(listener, handler)
 		if err != nil {
 			s.logger.Printf("Warn: Callback server fail: %v", err)
 		}
@@ -203,13 +207,13 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		cancel()
 	}()
 	defer func() {
-		server.Close()
+		listener.Close()
 		close(callbackChan)
 	}()
 
 	authURL := s.oidcClient.AuthCodeURL(s.oidcConfig, state, extra)
 	s.logger.Printf("Info: Opening browser to access URL: %s", authURL)
-	err := s.openBrowser(authURL)
+	err = s.openBrowser(authURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: Failed to open browser. Please open this URL in browser: %s Err: %v", authURL, err)
 	}
