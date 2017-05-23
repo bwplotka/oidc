@@ -1,8 +1,10 @@
+apiVersion: v1
 clusters:
 - cluster:
     insecure-skip-tls-verify: true
     server: https://master.com:2222
   name: cluster1
+contexts: []
 current-context: cluster1
 kind: Config
 preferences: {}
