@@ -1,12 +1,16 @@
-package login
+package k8s
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/Bplotka/oidc"
+	"github.com/Bplotka/oidc/login"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,7 +20,7 @@ const (
 )
 
 func TestK8sCache_Token(t *testing.T) {
-	loginCfg := Config{
+	loginCfg := login.Config{
 		ClientID:     "ID1",
 		ClientSecret: "secret1",
 		NonceCheck:   true,
@@ -30,7 +34,7 @@ func TestK8sCache_Token(t *testing.T) {
 		Provider: testProvider,
 	}
 
-	cache := NewK8sConfigCache(
+	cache := NewConfigCache(
 		loginCfg,
 		"cluster1-access",
 		"cluster2-access",
@@ -116,7 +120,7 @@ func copyFileContents(src, dst string) (err error) {
 }
 
 func TestK8sCache_SetToken(t *testing.T) {
-	loginCfg := Config{
+	loginCfg := login.Config{
 		ClientID:     "ID1",
 		ClientSecret: "secret1",
 		NonceCheck:   true,
@@ -130,7 +134,7 @@ func TestK8sCache_SetToken(t *testing.T) {
 		Provider: testProvider,
 	}
 
-	cache := NewK8sConfigCache(
+	cache := NewConfigCache(
 		loginCfg,
 		"cluster1-access",
 		"cluster2-access",
@@ -175,4 +179,12 @@ func TestK8sCache_SetToken(t *testing.T) {
 	} {
 		test(inputCfgPath)
 	}
+}
+
+func rand128Bits() string {
+	buff := make([]byte, 16) // 128 bit random ID.
+	if _, err := io.ReadFull(rand.Reader, buff); err != nil {
+		panic(err)
+	}
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(buff), "=")
 }

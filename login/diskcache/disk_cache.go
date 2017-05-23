@@ -1,4 +1,4 @@
-package login
+package disk
 
 import (
 	"encoding/json"
@@ -13,31 +13,31 @@ import (
 // DefaultTokenCachePath is default path for OIDC tokens.
 const DefaultTokenCachePath = "~/.oidc_keys"
 
-// OnDiskTokenCache is a oidc Token caching structure that stores all tokens on disk.
+// TokenCache is a oidc Token caching structure that stores all tokens on disk.
 // Tokens cache files are named after clientID and arg[0].
 // NOTE: There is no logic for cleaning cache in case of change in clientID.
-type OnDiskTokenCache struct {
+type TokenCache struct {
 	storePath string
 	clientID  string
 }
 
-// NewDiskTokenCache constructs disk cache.
-func NewDiskTokenCache(clientID string, path string) *OnDiskTokenCache {
-	return &OnDiskTokenCache{storePath: path, clientID: clientID}
+// NewTokenCache constructs disk cache.
+func NewTokenCache(clientID string, path string) *TokenCache {
+	return &TokenCache{storePath: path, clientID: clientID}
 }
 
-func (c *OnDiskTokenCache) getOrCreateStoreDir() (string, error) {
+func (c *TokenCache) getOrCreateStoreDir() (string, error) {
 	err := os.MkdirAll(c.storePath, os.ModeDir|0700)
 	return c.storePath, err
 }
 
-func (c *OnDiskTokenCache) tokenCacheFileName() string {
+func (c *TokenCache) tokenCacheFileName() string {
 	cliToolName := filepath.Base(os.Args[0])
 	return fmt.Sprintf("token_%s_%s", cliToolName, c.clientID)
 }
 
 // Token retrieves token from file.
-func (c *OnDiskTokenCache) Token() (*oidc.Token, error) {
+func (c *TokenCache) Token() (*oidc.Token, error) {
 	storeDir, err := c.getOrCreateStoreDir()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create store dir. Err: %v", err)
@@ -60,7 +60,7 @@ func (c *OnDiskTokenCache) Token() (*oidc.Token, error) {
 }
 
 // SetToken saves token in file.
-func (c *OnDiskTokenCache) SetToken(token *oidc.Token) error {
+func (c *TokenCache) SetToken(token *oidc.Token) error {
 	storeDir, err := c.getOrCreateStoreDir()
 	if err != nil {
 		return err

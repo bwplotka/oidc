@@ -12,6 +12,7 @@ import (
     "os"
     
     "github.com/Bplotka/oidc/login"
+    "github.com/Bplotka/oidc/login/diskcache"
 )
 
 func main() {
@@ -25,7 +26,7 @@ func main() {
         NonceCheck: true,
     }
 
-    cache := login.NewDiskTokenCache(oidcConfig.ClientID, "~/.super_cache") // see also other caches e.g k8s cache.
+    cache := disk.NewTokenCache(oidcConfig.ClientID, "~/.super_cache") // see also other caches e.g k8s.NewConfigCache.
 
 	source, err := login.NewOIDCTokenSource(context.Background(), log.New(os.Stdout, "", 0), oidcConfig, cache)
 	if err != nil {

@@ -1,4 +1,4 @@
-package login
+package k8s
 
 import (
 	"fmt"
@@ -9,12 +9,13 @@ import (
 	"strings"
 
 	"github.com/Bplotka/oidc"
+	"github.com/Bplotka/oidc/login"
 	"github.com/ghodss/yaml"
 )
 
 const defaultKubeConfigPath = "~/.kube/config"
 
-// K8sConfigCache is an cache for OIDC tokens that installs token inside k8s user config directory in `Users:` sections of yaml.
+// ConfigCache is an cache for OIDC tokens that installs token inside k8s user config directory in `Users:` sections of yaml.
 // It is convenient for initial install of token (possibly refresh-token) for OIDC auth-provider. It stores config following
 // set-credentials way of saving credentials:
 //
@@ -32,20 +33,20 @@ const defaultKubeConfigPath = "~/.kube/config"
 //      name: oidc
 //
 // Tested with k8s version 1.6.3
-type K8sConfigCache struct {
-	loginCfg       Config
+type ConfigCache struct {
+	cfg            login.Config
 	users          map[string]struct{}
 	kubeConfigPath string
 }
 
-// NewK8sConfigCache constructs cache.
-func NewK8sConfigCache(loginCfg Config, k8sUsers ...string) *K8sConfigCache {
+// NewConfigCache constructs cache.
+func NewConfigCache(loginCfg login.Config, k8sUsers ...string) *ConfigCache {
 	users := map[string]struct{}{}
 	// For easier lookup.
 	for _, u := range k8sUsers {
 		users[u] = struct{}{}
 	}
-	return &K8sConfigCache{loginCfg: loginCfg, users: users, kubeConfigPath: defaultKubeConfigPath}
+	return &ConfigCache{cfg: loginCfg, users: users, kubeConfigPath: defaultKubeConfigPath}
 }
 
 // K8sConfig holds the information needed to build connect to remote kubernetes clusters as a given user
@@ -70,7 +71,7 @@ type K8sAuthProviderConfig struct {
 	Config map[string]string `json:"config,omitempty"`
 }
 
-func extraScopes(cfg Config) []string {
+func extraScopes(cfg login.Config) []string {
 	var extra []string
 	for _, scope := range cfg.Scopes {
 		// --auth-provider-arg=extra-scopes=( comma separated list of scopes to add to "openid email profile", optional)
@@ -104,7 +105,7 @@ func safeFilePath(path string) string {
 // Token retrieves the tokens from all of the registered users in kube config. It does not check if tokens are valid, however if the OIDC clients
 // data are different than configured in login.Config or one of the tokens for all specified k8s users is different - it
 // returns an error.
-func (c *K8sConfigCache) Token() (*oidc.Token, error) {
+func (c *ConfigCache) Token() (*oidc.Token, error) {
 	path := safeFilePath(c.kubeConfigPath)
 
 	file, err := ioutil.ReadFile(path)
@@ -133,19 +134,19 @@ func (c *K8sConfigCache) Token() (*oidc.Token, error) {
 
 		authConfig := user.User.AuthProvider.Config
 		// Validates fields with given config.
-		if authConfig["client-id"] != c.loginCfg.ClientID {
+		if authConfig["client-id"] != c.cfg.ClientID {
 			return nil, fmt.Errorf("Wrong ClientID for user %s", user.Name)
 		}
 
-		if authConfig["client-secret"] != c.loginCfg.ClientSecret {
+		if authConfig["client-secret"] != c.cfg.ClientSecret {
 			return nil, fmt.Errorf("Wrong ClientSecret for user %s", user.Name)
 		}
 
-		if !compareStringSlices(strings.Split(authConfig["extra-scopes"], ","), extraScopes(c.loginCfg)) {
+		if !compareStringSlices(strings.Split(authConfig["extra-scopes"], ","), extraScopes(c.cfg)) {
 			return nil, fmt.Errorf("Extra scopes does not match for user %s", user.Name)
 		}
 
-		if authConfig["idp-issuer-url"] != c.loginCfg.Provider {
+		if authConfig["idp-issuer-url"] != c.cfg.Provider {
 			return nil, fmt.Errorf("Wrong Issuer Identity Provider for user %s", user.Name)
 		}
 
@@ -191,7 +192,7 @@ func compareStringSlices(x, y []string) bool {
 
 // SetToken saves token as k8s user's credentials inside k8s config directory. It saves the same thing for ALL specified
 // k8s users.
-func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
+func (c *ConfigCache) SetToken(token *oidc.Token) error {
 	path := safeFilePath(c.kubeConfigPath)
 
 	file, err := ioutil.ReadFile(path)
@@ -204,18 +205,18 @@ func (c *K8sConfigCache) SetToken(token *oidc.Token) error {
 	validUsers := map[string]*K8sAuthInfo{}
 	for userName := range c.users {
 		validUser := &K8sAuthInfo{
-				AuthProvider: &K8sAuthProviderConfig{
-					Name: "oidc",
-					Config: map[string]string{
-						"idp-issuer-url": c.loginCfg.Provider,
-						"client-id":      c.loginCfg.ClientID,
-						"client-secret":  c.loginCfg.ClientSecret,
-						"extra-scopes":   strings.Join(extraScopes(c.loginCfg), ","),
+			AuthProvider: &K8sAuthProviderConfig{
+				Name: "oidc",
+				Config: map[string]string{
+					"idp-issuer-url": c.cfg.Provider,
+					"client-id":      c.cfg.ClientID,
+					"client-secret":  c.cfg.ClientSecret,
+					"extra-scopes":   strings.Join(extraScopes(c.cfg), ","),
 
-						"refresh-token": token.RefreshToken,
-						"id-token":      token.IDToken,
-					},
+					"refresh-token": token.RefreshToken,
+					"id-token":      token.IDToken,
 				},
+			},
 		}
 		validUsers[userName] = validUser
 	}
