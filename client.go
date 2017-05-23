@@ -239,7 +239,6 @@ func (c *Client) Revoke(ctx context.Context, cfg Config, token string) error {
 
 // AuthCodeURL returns a URL to OIDC provider's consent page
 // that asks for permissions for the required scopes explicitly.
-//
 // State is a token to protect the user from CSRF attacks. You must
 // always provide a non-zero string and validate that it matches the
 // the state query parameter on your redirect callback.
