@@ -95,7 +95,7 @@ type IDToken struct {
 
 	// The client ID, or set of client IDs, that this token is issued for. For
 	// common uses, this is the client that initialized the auth flow.
-	Audience []string `json:"aud"`
+	Audience Audience `json:"aud"`
 
 	// A unique string which identifies the end user.
 	Subject string `json:"sub"`
@@ -113,6 +113,26 @@ type IDToken struct {
 
 	// Raw payload of the id_token.
 	claims []byte
+}
+
+type Audience []string
+
+func (a *Audience) UnmarshalJSON(b []byte) error {
+	var audience []string
+	err := json.Unmarshal(b, &audience)
+	if err == nil {
+		*a = Audience(audience)
+		return nil
+	}
+
+	var audienceString string
+	err = json.Unmarshal(b, &audienceString)
+	if err != nil {
+		return err
+	}
+
+	*a = Audience([]string{audienceString})
+	return nil
 }
 
 // Claims unmarshals the raw JSON payload of the ID Token into a provided struct.
