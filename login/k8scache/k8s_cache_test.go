@@ -47,7 +47,7 @@ func TestK8sCache_Token(t *testing.T) {
 		token, err := cache.Token()
 		if expectedErr != "" {
 			require.Error(t, err)
-			assert.Equal(t, expectedErr, err.Error())
+			assert.Contains(t, err.Error(), expectedErr)
 		} else {
 			require.NoError(t, err)
 			assert.Equal(t, expectedRefreshToken, token.RefreshToken)
@@ -81,7 +81,7 @@ func TestK8sCache_Token(t *testing.T) {
 		},
 		{
 			configPath:     "test-data/diff_refreshtoken_config.yaml",
-			expectedErrMsg: "Different RefreshTokens among users, found on user cluster2-access",
+			expectedErrMsg: "Different RefreshTokens among users, found on user ",
 		},
 		{
 			configPath:     "test-data/not_all_users_config.yaml",
