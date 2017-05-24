@@ -27,7 +27,7 @@ import (
 
 const (
 	testIssuer       = "https://issuer.org"
-	testBindAddress  = "http://127.0.0.1:8393/something"
+	testBindAddress  = "http://127.0.0.1:0/something"
 	testClientID     = "clientID1"
 	testClientSecret = "secret1"
 	testNonce        = "nonce1"
@@ -111,13 +111,6 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 	bindURL, err := url.Parse(s.testCfg.BindAddress)
 	s.Require().NoError(err)
 
-	oidcConfig := oidc.Config{
-		ClientID:     s.testCfg.ClientID,
-		ClientSecret: s.testCfg.ClientSecret,
-		RedirectURL:  bindURL.String() + callbackPath,
-		Scopes:       s.testCfg.Scopes,
-	}
-
 	oidcClient, err := oidc.NewClient(s.testCtx, s.testCfg.Provider)
 	s.Require().NoError(err)
 
@@ -125,9 +118,7 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 		ctx:    s.testCtx,
 		logger: log.New(os.Stdout, "", 0),
 
-		oidcClient: oidcClient,
-		oidcConfig: oidcConfig,
-
+		oidcClient:  oidcClient,
 		tokenCache:  s.cache,
 		cfg:         s.testCfg,
 		bindURL:     bindURL,
@@ -162,7 +153,7 @@ func TestTokenSourceTestSuite(t *testing.T) {
 func TestCallbackURL(t *testing.T) {
 	bindURL, err := url.Parse(testBindAddress)
 	require.NoError(t, err)
-	assert.Equal(t, "127.0.0.1:8393", bindURL.Host)
+	assert.Equal(t, "127.0.0.1:0", bindURL.Host)
 	assert.Equal(t, "/something/callback", callbackURL(bindURL))
 }
 
@@ -185,21 +176,40 @@ func (s *TokenSourceTestSuite) Test_CacheOK() {
 	s.Equal(0, s.s.Len())
 }
 
-func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(string) error {
-	req, err := http.NewRequest("GET", fmt.Sprintf(
-		"%s/callback?code=%s&state=%s",
-		testBindAddress,
-		"code1",
-		expectedWord,
-	), nil)
-	s.Require().NoError(err)
+func stripRedirectURL(urlToStrip string) (string, error) {
+	// Strip out redirectURL from URL.
+	var redirectURL string
+	splittedURL := strings.Split(urlToStrip, "&")
+	for _, arg := range splittedURL {
+		if !strings.HasPrefix(arg, "redirect_uri=") {
+			continue
+		}
+		redirectArg := strings.Split(arg, "=")
+		if len(redirectArg) != 2 {
+			return "", errors.New("More or less than two args after splitting by `=`")
+		}
+		var err error
+		redirectURL, err = url.QueryUnescape(redirectArg[1])
+		if err != nil {
+			return "", err
+		}
+	}
+	if redirectURL == "" {
+		return "", errors.New("RedirectURL not found in given URL.")
+	}
+	return redirectURL, nil
+}
 
+func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(string) error {
 	return func(urlToGet string) error {
+		redirectURL, err := stripRedirectURL(urlToGet)
+		s.Require().NoError(err)
+
 		s.Equal(fmt.Sprintf(
 			"https://issuer.org/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
 			testClientID,
 			expectedWord,
-			url.QueryEscape(s.oidcSource.oidcConfig.RedirectURL),
+			url.QueryEscape(redirectURL),
 			strings.Join(s.testCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
@@ -215,17 +225,24 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 
 		s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
-		bindURL, err := url.Parse(testBindAddress)
+		req, err := http.NewRequest("GET", fmt.Sprintf(
+			"%s?code=%s&state=%s",
+			redirectURL,
+			"code1",
+			expectedWord,
+		), nil)
 		s.Require().NoError(err)
 
+		u, err := url.Parse(redirectURL)
+		s.Require().NoError(err)
 		for i := 0; i <= 5; i++ {
-			_, err = net.Dial("tcp", bindURL.Host)
+			_, err = net.Dial("tcp", u.Host)
 			if err == nil {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
 		}
-		s.Require().NoError(err)
+		s.Require().NoError(err, "Server should be able to start and listen on provided address.")
 
 		res, err := http.DefaultClient.Do(req)
 		s.Require().NoError(err)
@@ -346,31 +363,33 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 		return expectedWord
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf(
-		"%s/callback?code=%s&state=%s",
-		testBindAddress,
-		"code1",
-		expectedWord,
-	), nil)
-	s.Require().NoError(err)
-
 	s.oidcSource.openBrowser = func(urlToGet string) error {
+		redirectURL, err := stripRedirectURL(urlToGet)
+		s.Require().NoError(err)
+
 		s.Equal(fmt.Sprintf(
 			"https://issuer.org/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
 			testClientID,
 			expectedWord,
-			url.QueryEscape(s.oidcSource.oidcConfig.RedirectURL),
+			url.QueryEscape(redirectURL),
 			strings.Join(s.testCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
 
 		s.s.Push(rt.JSONResponseFunc(http.StatusGatewayTimeout, []byte(`{"error": "temporary unavailable"}`)))
 
-		bindURL, err := url.Parse(testBindAddress)
+		req, err := http.NewRequest("GET", fmt.Sprintf(
+			"%s?code=%s&state=%s",
+			redirectURL,
+			"code1",
+			expectedWord,
+		), nil)
 		s.Require().NoError(err)
-
+		
+		u, err := url.Parse(redirectURL)
+		s.Require().NoError(err)
 		for i := 0; i <= 5; i++ {
-			_, err = net.Dial("tcp", bindURL.Host)
+			_, err = net.Dial("tcp", u.Host)
 			if err == nil {
 				break
 			}
@@ -381,12 +400,12 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 		res, err := http.DefaultClient.Do(req)
 		s.Require().NoError(err)
 
-		// Still it shoud be ok.
+		// Still it should be ok.
 		s.Equal(http.StatusOK, res.StatusCode)
 		return nil
 	}
 
-	_, err = s.oidcSource.OIDCToken()
+	_, err := s.oidcSource.OIDCToken()
 	s.Require().Error(err)
 	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: \nResponse: {\"error\": \"temporary unavailable\"}", err.Error())
 

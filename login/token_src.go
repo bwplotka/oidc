@@ -16,10 +16,6 @@ import (
 
 const callbackPath = "/callback"
 
-func callbackURL(u *url.URL) string {
-	return u.Path + callbackPath
-}
-
 //go:generate mockery -name TokenCache -case underscore
 
 // TokenCache is a Open ID Connect Token caching structure.
@@ -36,7 +32,6 @@ type OIDCTokenSource struct {
 	logger *log.Logger
 
 	oidcClient *oidc.Client
-	oidcConfig oidc.Config
 
 	// These two are guarded by mutex.
 	tokenCache TokenCache
@@ -56,13 +51,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
 	}
 
-	oidcConfig := oidc.Config{
-		ClientID:     cfg.ClientID,
-		ClientSecret: cfg.ClientSecret,
-		RedirectURL:  bindURL.String() + callbackPath,
-		Scopes:       cfg.Scopes,
-	}
-
 	oidcClient, err := oidc.NewClient(ctx, cfg.Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
@@ -73,7 +61,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 		logger: logger,
 
 		oidcClient: oidcClient,
-		oidcConfig: oidcConfig,
 
 		tokenCache:   tokenCache,
 		cfg:          cfg,
@@ -87,6 +74,25 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 	}
 
 	return oidc.NewReuseTokenSource(ctx, nil, s), nil
+}
+
+func (s *OIDCTokenSource) getOIDCConfig() oidc.Config {
+	oidcConfig := oidc.Config{
+		ClientID:     s.cfg.ClientID,
+		ClientSecret: s.cfg.ClientSecret,
+		Scopes:       s.cfg.Scopes,
+	}
+	return oidcConfig
+}
+
+func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.Config {
+	oidcConfig := oidc.Config{
+		ClientID:     s.cfg.ClientID,
+		ClientSecret: s.cfg.ClientSecret,
+		Scopes:       s.cfg.Scopes,
+		RedirectURL:  redirectURL,
+	}
+	return oidcConfig
 }
 
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
@@ -125,7 +131,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 // Verifier returns verifier for tokens.
 func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 	return s.oidcClient.Verifier(oidc.VerificationConfig{
-		ClientID:   s.oidcConfig.ClientID,
+		ClientID:   s.cfg.ClientID,
 		ClaimNonce: s.nonce,
 	})
 }
@@ -137,7 +143,7 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 	token, err := oidc.NewTokenRefresher(
 		s.ctx,
 		s.oidcClient,
-		s.oidcConfig,
+		s.getOIDCConfig(),
 		refreshToken,
 	).OIDCToken()
 	if err != nil {
@@ -163,6 +169,10 @@ func (s *OIDCTokenSource) prefixPath() string {
 	return "/"
 }
 
+func callbackURL(u *url.URL) string {
+	return u.Path + callbackPath
+}
+
 // newToken starts short-living server that exposes callback handler and opens browser to call Provider auth endpoint
 // with response type set to `code`.
 // NOTE: this flow will fail on any random request that will fly to callback request. Currently there is no way to differentiate
@@ -185,19 +195,22 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	defer cancel()
 
 	// TODO(bplotka): Consider having server up for a whole life of tokenSource.
-	handler := http.NewServeMux()
-	handler.HandleFunc(callbackURL(s.bindURL), callbackHandler(
-		ctx,
-		s.oidcClient,
-		s.oidcConfig,
-		state,
-		callbackChan,
-	))
-
 	listener, err := net.Listen("tcp", s.bindURL.Host)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to Listen for tcp on: %s. Err: %v", s.bindURL.Host, err)
 	}
+
+	redirectURL := fmt.Sprintf("http://%s%s", listener.Addr().String(), callbackURL(s.bindURL))
+
+	handler := http.NewServeMux()
+	handler.HandleFunc(callbackURL(s.bindURL), callbackHandler(
+		ctx,
+		s.oidcClient,
+		s.getOIDCConfigWithRedirectURL(redirectURL),
+		state,
+		callbackChan,
+	))
+
 	go func() {
 		err := http.Serve(listener, handler)
 		if err != nil {
@@ -211,7 +224,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		close(callbackChan)
 	}()
 
-	authURL := s.oidcClient.AuthCodeURL(s.oidcConfig, state, extra)
+	authURL := s.oidcClient.AuthCodeURL(s.getOIDCConfigWithRedirectURL(redirectURL), state, extra)
 	s.logger.Printf("Info: Opening browser to access URL: %s", authURL)
 	err = s.openBrowser(authURL)
 	if err != nil {
