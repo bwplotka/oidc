@@ -176,33 +176,33 @@ func (s *TokenSourceTestSuite) Test_CacheOK() {
 	s.Equal(0, s.s.Len())
 }
 
-func stripRedirectURL(urlToStrip string) (string, error) {
-	// Strip out redirectURL from URL.
-	var redirectURL string
+// stripArgFromURL strips out arg value from URL.
+func stripArgFromURL(arg string, urlToStrip string) (string, error) {
+	var argValue string
 	splittedURL := strings.Split(urlToStrip, "&")
-	for _, arg := range splittedURL {
-		if !strings.HasPrefix(arg, "redirect_uri=") {
+	for _, a := range splittedURL {
+		if !strings.HasPrefix(a, arg+"=") {
 			continue
 		}
-		redirectArg := strings.Split(arg, "=")
-		if len(redirectArg) != 2 {
+		splittedArg := strings.Split(a, "=")
+		if len(splittedArg) != 2 {
 			return "", errors.New("More or less than two args after splitting by `=`")
 		}
 		var err error
-		redirectURL, err = url.QueryUnescape(redirectArg[1])
+		argValue, err = url.QueryUnescape(splittedArg[1])
 		if err != nil {
 			return "", err
 		}
 	}
-	if redirectURL == "" {
-		return "", errors.New("RedirectURL not found in given URL.")
+	if argValue == "" {
+		return "", fmt.Errorf("%s not found in given URL.", arg)
 	}
-	return redirectURL, nil
+	return argValue, nil
 }
 
 func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(string) error {
 	return func(urlToGet string) error {
-		redirectURL, err := stripRedirectURL(urlToGet)
+		redirectURL, err := stripArgFromURL("redirect_uri", urlToGet)
 		s.Require().NoError(err)
 
 		s.Equal(fmt.Sprintf(
@@ -364,7 +364,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 	}
 
 	s.oidcSource.openBrowser = func(urlToGet string) error {
-		redirectURL, err := stripRedirectURL(urlToGet)
+		redirectURL, err := stripArgFromURL("redirect_uri", urlToGet)
 		s.Require().NoError(err)
 
 		s.Equal(fmt.Sprintf(
@@ -385,7 +385,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 			expectedWord,
 		), nil)
 		s.Require().NoError(err)
-		
+
 		u, err := url.Parse(redirectURL)
 		s.Require().NoError(err)
 		for i := 0; i <= 5; i++ {
