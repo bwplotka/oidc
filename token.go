@@ -17,6 +17,7 @@ const expiryDelta = 10 * time.Second
 
 // Token is an Open ID Connect token's response described here:
 // http://openid.net/specs/openid-connect-core-1_0.html#TokenResponse. Token is always Bearer type.
+// See TokenResponse for full oauth2-compatible response.
 type Token struct {
 	// AccessToken is the token that authorizes and authenticates
 	// the requests. It can be used for API access or token revocation.

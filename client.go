@@ -403,12 +403,6 @@ func (r *brokenTokenResponse) expiry() time.Time {
 
 type expirationTime int32
 
-// MarshalJSON marshals expiration time to JSON.
-func (e *expirationTime) MarshalJSON() ([]byte, error) {
-	n := json.Number(*e)
-	return json.Marshal(n)
-}
-
 // MarshalJSON unmarshals expiration time from JSON.
 func (e *expirationTime) UnmarshalJSON(b []byte) error {
 	var n json.Number
