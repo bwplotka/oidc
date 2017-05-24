@@ -212,10 +212,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	))
 
 	go func() {
-		err := http.Serve(listener, handler)
-		if err != nil {
-			s.logger.Printf("Warn: Callback server fail: %v", err)
-		}
+		http.Serve(listener, handler)
 		srvClosed <- struct{}{}
 		cancel()
 	}()
