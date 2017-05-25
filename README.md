@@ -52,12 +52,11 @@ func main() {
 See [login](./login/README.md)
 
 ## Deps:
-- gopkg.in/square/go-jose.v2
-- github.com/ghodss/yaml (because of k8s)
 
-Note that for tests this list is extended.
+Vendoring using submodules. See [.gitmodules](.gitmodules)
+ 
 
 ## Wishlist:
 
-* Support 0 port (not pin into exact port)
-* Consider moving to structure logger with levels e.g logrus or just drop logging. (I don't like passing std logger in constructor)   
+* [x] Support 0 port (not pin into exact port)
+* [ ] Consider moving to structure logger with levels e.g logrus or just drop logging. (I don't like passing std logger in constructor)   

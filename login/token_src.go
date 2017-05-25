@@ -100,7 +100,7 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	cachedToken, err := s.tokenCache.Token()
 	if err != nil {
-		s.logger.Printf("Error: Failed to get cached token. Caching might be broken. Err: %v", err)
+		s.logger.Printf("Warn: Failed to get cached token or token is invalid. Err: %v", err)
 	} else if cachedToken != nil {
 		if cachedToken.Valid(s.ctx, s.Verifier()) {
 			// Successfully retrieved a non-expired cached token and only if we have ID token as well.
@@ -217,6 +217,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		cancel()
 	}()
 	defer func() {
+		// Move to shutdown.
 		listener.Close()
 		close(callbackChan)
 	}()

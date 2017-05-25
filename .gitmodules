@@ -1,0 +1,21 @@
+[submodule "vendor/github.com/Bplotka/go-httpt"]
+	path = vendor/github.com/Bplotka/go-httpt
+	url = https://github.com/Bplotka/go-httpt
+[submodule "vendor/github.com/Bplotka/go-jwt"]
+	path = vendor/github.com/Bplotka/go-jwt
+	url = https://github.com/Bplotka/go-jwt
+[submodule "vendor/github.com/ghodss/yaml"]
+	path = vendor/github.com/ghodss/yaml
+	url = https://github.com/ghodss/yaml
+[submodule "vendor/github.com/stretchr/testify"]
+	path = vendor/github.com/stretchr/testify
+	url = https://github.com/stretchr/testify
+[submodule "vendor/golang.org/x/net"]
+	path = vendor/golang.org/x/net
+	url = https://go.googlesource.com/net
+[submodule "vendor/gopkg.in/square/go-jose.v2"]
+	path = vendor/gopkg.in/square/go-jose.v2
+	url = https://gopkg.in/square/go-jose.v2
+[submodule "vendor/k8s.io/client-go"]
+	path = vendor/k8s.io/client-go
+	url = https://github.com/kubernetes/client-go
