@@ -28,8 +28,8 @@ func TestK8sCache_Token(t *testing.T) {
 			oidc.ScopeOpenID,
 			oidc.ScopeProfile,
 			oidc.ScopeEmail,
-			"groups",
 			oidc.ScopeOfflineAccess,
+			"groups",
 		},
 		Provider: testProvider,
 	}
@@ -174,8 +174,56 @@ func TestK8sCache_SetToken(t *testing.T) {
 		"test-data/wrong_scopes_config.yaml",
 		"test-data/wrong_idp_config.yaml",
 		"test-data/diff_refreshtoken_config.yaml",
-		// "test-data/not_all_users_config.yaml", This needs to be excluded - we are not quarantining any order.
+		"test-data/not_all_users_config.yaml",
 		"test-data/ok_config.yaml",
+	} {
+		test(inputCfgPath)
+	}
+}
+
+func TestK8sCache_ClearToken(t *testing.T) {
+	loginCfg := login.Config{
+		ClientID:     "ID1",
+		ClientSecret: "secret1",
+		NonceCheck:   true,
+		Scopes: []string{
+			oidc.ScopeOpenID,
+			oidc.ScopeProfile,
+			oidc.ScopeEmail,
+			"groups",
+			oidc.ScopeOfflineAccess,
+		},
+		Provider: testProvider,
+	}
+
+	cache := NewConfigCache(
+		loginCfg,
+		"cluster1-access",
+		"cluster2-access",
+	)
+
+	test := func(inputCfgPath string) {
+		t.Logf("Testing %s", inputCfgPath)
+		cache.kubeConfigPath = "test-data/tmp-" + rand128Bits()
+
+		err := copyFileContents(inputCfgPath, cache.kubeConfigPath)
+		require.NoError(t, err)
+
+		defer os.Remove(cache.kubeConfigPath)
+		err = cache.ClearIDToken()
+		require.NoError(t, err)
+
+		file, err := ioutil.ReadFile(cache.kubeConfigPath)
+		require.NoError(t, err)
+
+		expected, err := ioutil.ReadFile("test-data/expected_config_clear.yaml")
+		require.NoError(t, err)
+
+		assert.Equal(t, string(expected), string(file))
+	}
+
+	for _, inputCfgPath := range []string{
+		"test-data/expected_config.yaml",
 	} {
 		test(inputCfgPath)
 	}

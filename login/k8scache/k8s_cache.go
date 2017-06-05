@@ -155,11 +155,7 @@ func (c *ConfigCache) SetToken(token *oidc.Token) error {
 			" permissions. Err: %v", c.kubeConfigPath, err)
 	}
 
-	for name := range k8sConfig.AuthInfos {
-		if _, ok := c.users[name]; !ok {
-			// We care only about specified access users.
-			continue
-		}
+	for name := range c.users {
 		validUAuthInfo := &api.AuthInfo{
 			AuthProvider: &api.AuthProviderConfig{
 				Name: "oidc",
@@ -174,7 +170,36 @@ func (c *ConfigCache) SetToken(token *oidc.Token) error {
 				},
 			},
 		}
+
 		k8sConfig.AuthInfos[name] = validUAuthInfo
+	}
+
+	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
+}
+
+// ClearIDToken removed ID token from config. It is useful when you want to refresh ID token but token did not yet
+// expire.
+func (c *ConfigCache) ClearIDToken() error {
+	k8sConfig, err := cfg.LoadFromFile(c.kubeConfigPath)
+	if err != nil {
+		return fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
+			" permissions. Err: %v", c.kubeConfigPath, err)
+	}
+
+	for name := range c.users {
+		if _, ok := k8sConfig.AuthInfos[name]; !ok {
+			continue
+		}
+
+		if k8sConfig.AuthInfos[name].AuthProvider == nil {
+			continue
+		}
+
+		if k8sConfig.AuthInfos[name].AuthProvider.Config == nil {
+			continue
+		}
+
+		delete(k8sConfig.AuthInfos[name].AuthProvider.Config, "id-token")
 	}
 
 	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
