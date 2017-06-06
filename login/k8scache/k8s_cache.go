@@ -10,7 +10,7 @@ import (
 	api "k8s.io/client-go/tools/clientcmd/api"
 )
 
-var defaultKubeConfigPath = cfg.RecommendedHomeFile
+var DefaultKubeConfigPath = cfg.RecommendedHomeFile
 
 // ConfigCache is an cache for OIDC tokens that installs token inside k8s user config directory in `Users:` sections of yaml.
 // It is convenient for initial install of token (possibly refresh-token) for OIDC auth-provider. It stores config following
@@ -42,7 +42,12 @@ func NewConfigCache(loginCfg login.Config, k8sUsers ...string) *ConfigCache {
 	for _, u := range k8sUsers {
 		users[u] = struct{}{}
 	}
-	return &ConfigCache{cfg: loginCfg, users: users, kubeConfigPath: defaultKubeConfigPath}
+	return &ConfigCache{cfg: loginCfg, users: users, kubeConfigPath: DefaultKubeConfigPath}
+}
+
+// SetConfigPath sets custom path as config path for kube config.
+func (c *ConfigCache) SetConfigPath(path string) {
+	c.kubeConfigPath = path
 }
 
 func extraScopes(cfg login.Config) []string {
