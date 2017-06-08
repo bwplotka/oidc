@@ -88,6 +88,7 @@ func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshT
 // updates the tokenRefresher's refreshToken field.
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
+// NOTE: Returned token is not verified.
 func (tf *TokenRefresher) OIDCToken() (*Token, error) {
 	if tf.refreshToken == "" {
 		return nil, errors.New("oauth2: token expired and refresh token is not set")

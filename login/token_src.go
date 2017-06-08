@@ -150,8 +150,17 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 		return nil, err
 	}
 
-	if !token.Valid(s.ctx, s.Verifier()) {
-		return nil, fmt.Errorf("got invalid idToken from provider")
+	_, err = s.Verifier().Verify(s.ctx, token.IDToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify idToken from provider. Err: %v", err)
+	}
+
+	if token.AccessToken == "" {
+		return nil, fmt.Errorf("no access token found in token from provider")
+	}
+
+	if token.IsAccessTokenExpired() {
+		return nil, fmt.Errorf("got expired access token in token from provider")
 	}
 
 	err = s.tokenCache.SetToken(token)

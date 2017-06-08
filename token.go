@@ -60,7 +60,8 @@ func (t *Token) SetAuthHeader(r *http.Request) {
 	r.Header.Set("Authorization", "Bearer "+t.AccessToken)
 }
 
-func (t *Token) accessTokenExpired() bool {
+// IsAccessTokenExpired returns true if access token expired.
+func (t *Token) IsAccessTokenExpired() bool {
 	if t.AccessTokenExpiry.IsZero() {
 		return false
 	}
@@ -68,13 +69,14 @@ func (t *Token) accessTokenExpired() bool {
 }
 
 // Valid validates oidc token by validating AccessToken and ID Token.
+// NOTE: If you required more detailed information of what is wrong, you need to verify ID token on your own.
 func (t *Token) Valid(ctx context.Context, verifier Verifier) bool {
-	idToken, err := verifier.Verify(ctx, t.IDToken)
+	_, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
 		return false
 	}
 
-	return t != nil && t.AccessToken != "" && !t.accessTokenExpired() && idToken.Expiry.Time().Add(-expiryDelta).After(time.Now())
+	return t.AccessToken != "" && !t.IsAccessTokenExpired()
 }
 
 // IDToken is an OpenID Connect extension that provides a predictable representation
