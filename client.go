@@ -375,16 +375,25 @@ type TokenResponse struct {
 	ExpiresIn    expirationTime `json:"expires_in,omitempty"` // at least PayPal returns string, while most return number
 	RefreshToken string         `json:"refresh_token,omitempty"`
 	Scope        string         `json:"scope,omitempty"`
+
+	timeNow func() time.Time
 }
 
-// SetExpiry sets expiry in form of time.
+// SetExpiry sets expiry in form of time in future.
 func (r *TokenResponse) SetExpiry(expiry time.Time) {
-	r.ExpiresIn = expirationTime(time.Now().Sub(expiry).Seconds())
+	if r.timeNow == nil {
+		r.timeNow = time.Now
+	}
+	r.ExpiresIn = expirationTime(expiry.Sub(r.timeNow()).Seconds())
 }
 
 func (r *TokenResponse) expiry() time.Time {
+	if r.timeNow == nil {
+		r.timeNow = time.Now
+	}
+
 	if v := r.ExpiresIn; v != 0 {
-		return time.Now().Add(time.Duration(v) * time.Second)
+		return r.timeNow().Add(time.Duration(v) * time.Second)
 	}
 	return time.Time{}
 }
@@ -401,6 +410,7 @@ func (r *brokenTokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
+// expirationTime represents Oauth2 valid expires_in field in seconds.
 type expirationTime int32
 
 // MarshalJSON unmarshals expiration time from JSON.

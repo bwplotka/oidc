@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Bplotka/go-httpt"
 	"github.com/Bplotka/go-httpt/rt"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/net/context"
 )
@@ -53,4 +55,33 @@ func TestClientTestSuite(t *testing.T) {
 
 func (s *ClientTestSuite) Test() {
 	// TODO
+}
+
+func TestTokenResponseExpiry(t *testing.T) {
+	expiresIn := 10
+
+	currTime := time.Now()
+	tr := TokenResponse{
+		ExpiresIn: expirationTime(expiresIn),
+	}
+	tr.timeNow = func() time.Time {
+		return currTime
+	}
+
+	assert.Equal(t, currTime.Add(time.Duration(expiresIn)*time.Second), tr.expiry())
+}
+
+func TestTokenResponseSetExpiry(t *testing.T) {
+	expiresIn := 10
+	currTime := time.Now()
+	expiry := currTime.Add(time.Duration(expiresIn) * time.Second)
+
+	tr := TokenResponse{}
+	tr.timeNow = func() time.Time {
+		return currTime
+	}
+	tr.SetExpiry(expiry)
+
+	assert.Equal(t, expiresIn, int(tr.ExpiresIn))
+	assert.Equal(t, expiry, tr.expiry())
 }
