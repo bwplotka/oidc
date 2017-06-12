@@ -11,7 +11,7 @@ import (
 )
 
 // DefaultTokenCachePath is default path for OIDC tokens.
-const DefaultTokenCachePath = "~/.oidc_keys"
+const DefaultTokenCachePath = "$HOME/.oidc_keys"
 
 // TokenCache is a oidc Token caching structure that stores all tokens on disk.
 // Tokens cache files are named after clientID and arg[0].
@@ -23,7 +23,7 @@ type TokenCache struct {
 
 // NewTokenCache constructs disk cache.
 func NewTokenCache(clientID string, path string) *TokenCache {
-	return &TokenCache{storePath: path, clientID: clientID}
+	return &TokenCache{storePath: os.ExpandEnv(path), clientID: clientID}
 }
 
 func (c *TokenCache) getOrCreateStoreDir() (string, error) {
