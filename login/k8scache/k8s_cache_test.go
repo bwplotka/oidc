@@ -20,10 +20,9 @@ const (
 )
 
 func TestK8sCache_Token(t *testing.T) {
-	loginCfg := login.Config{
+	loginCfg := login.OIDCConfig{
 		ClientID:     "ID1",
 		ClientSecret: "secret1",
-		NonceCheck:   true,
 		Scopes: []string{
 			oidc.ScopeOpenID,
 			oidc.ScopeProfile,
@@ -34,7 +33,8 @@ func TestK8sCache_Token(t *testing.T) {
 		Provider: testProvider,
 	}
 
-	cache := NewConfigCache(
+	cache := NewCache(
+		"",
 		loginCfg,
 		"cluster1-access",
 		"cluster2-access",
@@ -119,22 +119,22 @@ func copyFileContents(src, dst string) (err error) {
 	return
 }
 
-func TestK8sCache_SetToken(t *testing.T) {
-	loginCfg := login.Config{
+func TestK8sCache_SaveToken(t *testing.T) {
+	loginCfg := login.OIDCConfig{
 		ClientID:     "ID1",
 		ClientSecret: "secret1",
-		NonceCheck:   true,
 		Scopes: []string{
 			oidc.ScopeOpenID,
-			oidc.ScopeProfile,
 			oidc.ScopeEmail,
-			"groups",
+			oidc.ScopeProfile,
 			oidc.ScopeOfflineAccess,
+			"groups",
 		},
 		Provider: testProvider,
 	}
 
-	cache := NewConfigCache(
+	cache := NewCache(
+		"",
 		loginCfg,
 		"cluster1-access",
 		"cluster2-access",
@@ -155,7 +155,7 @@ func TestK8sCache_SetToken(t *testing.T) {
 			IDToken:      "new-id-token",
 		}
 
-		err = cache.SetToken(token)
+		err = cache.SaveToken(token)
 		require.NoError(t, err)
 
 		file, err := ioutil.ReadFile(cache.kubeConfigPath)
@@ -182,10 +182,9 @@ func TestK8sCache_SetToken(t *testing.T) {
 }
 
 func TestK8sCache_ClearToken(t *testing.T) {
-	loginCfg := login.Config{
+	loginCfg := login.OIDCConfig{
 		ClientID:     "ID1",
 		ClientSecret: "secret1",
-		NonceCheck:   true,
 		Scopes: []string{
 			oidc.ScopeOpenID,
 			oidc.ScopeProfile,
@@ -196,7 +195,8 @@ func TestK8sCache_ClearToken(t *testing.T) {
 		Provider: testProvider,
 	}
 
-	cache := NewConfigCache(
+	cache := NewCache(
+		"",
 		loginCfg,
 		"cluster1-access",
 		"cluster2-access",
@@ -235,4 +235,24 @@ func rand128Bits() string {
 		panic(err)
 	}
 	return strings.TrimRight(base64.URLEncoding.EncodeToString(buff), "=")
+}
+
+func TestK8sCache_NewCacheFromUser(t *testing.T) {
+	expectedConfig := login.OIDCConfig{
+		ClientID:     "ID1",
+		ClientSecret: "secret1",
+		Scopes: []string{
+			oidc.ScopeOpenID,
+			oidc.ScopeEmail,
+			oidc.ScopeProfile,
+			oidc.ScopeOfflineAccess,
+			"groups",
+		},
+		Provider: testProvider,
+	}
+
+	cache, err := NewCacheFromUser("test-data/expected_config.yaml", "cluster1-access")
+	require.NoError(t, err)
+
+	assert.Equal(t, expectedConfig, cache.Config())
 }

@@ -2,6 +2,7 @@ package login
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -16,12 +17,14 @@ import (
 
 const callbackPath = "/callback"
 
-//go:generate mockery -name TokenCache -case underscore
+//go:generate mockery -name Cache -case underscore -inpkg
 
-// TokenCache is a Open ID Connect Token caching structure.
-type TokenCache interface {
-	SetToken(token *oidc.Token) error
+// Cache is a Open ID Connect Token caching structure for token and configuration.
+// (These are usually stored in the same place.)
+type Cache interface {
+	SaveToken(token *oidc.Token) error
 	Token() (*oidc.Token, error)
+	Config() OIDCConfig
 }
 
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
@@ -30,28 +33,29 @@ type TokenCache interface {
 type OIDCTokenSource struct {
 	ctx    context.Context
 	logger *log.Logger
+	cfg    Config
 
 	oidcClient *oidc.Client
 
 	// These two are guarded by mutex.
-	tokenCache TokenCache
-	nonce      string
+	cache Cache
+	nonce string
 
 	bindURL *url.URL
-	cfg     Config
 
 	openBrowser  func(string) error
 	genRandToken func() string
 }
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tokenCache TokenCache) (oidc.TokenSource, error) {
+// Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache) (oidc.TokenSource, error) {
 	bindURL, err := url.Parse(cfg.BindAddress)
 	if err != nil {
 		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
 	}
 
-	oidcClient, err := oidc.NewClient(ctx, cfg.Provider)
+	oidcClient, err := oidc.NewClient(ctx, cache.Config().Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
 	}
@@ -59,11 +63,11 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 	s := &OIDCTokenSource{
 		ctx:    ctx,
 		logger: logger,
+		cfg:    cfg,
 
 		oidcClient: oidcClient,
 
-		tokenCache:   tokenCache,
-		cfg:          cfg,
+		cache:        cache,
 		bindURL:      bindURL,
 		openBrowser:  openBrowser,
 		genRandToken: rand128Bits,
@@ -77,19 +81,21 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, tok
 }
 
 func (s *OIDCTokenSource) getOIDCConfig() oidc.Config {
+	cfg := s.cache.Config()
 	oidcConfig := oidc.Config{
-		ClientID:     s.cfg.ClientID,
-		ClientSecret: s.cfg.ClientSecret,
-		Scopes:       s.cfg.Scopes,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		Scopes:       cfg.Scopes,
 	}
 	return oidcConfig
 }
 
 func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.Config {
+	cfg := s.cache.Config()
 	oidcConfig := oidc.Config{
-		ClientID:     s.cfg.ClientID,
-		ClientSecret: s.cfg.ClientSecret,
-		Scopes:       s.cfg.Scopes,
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		Scopes:       cfg.Scopes,
 		RedirectURL:  redirectURL,
 	}
 	return oidcConfig
@@ -98,7 +104,7 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
 func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
-	cachedToken, err := s.tokenCache.Token()
+	cachedToken, err := s.cache.Token()
 	if err != nil {
 		s.logger.Printf("Warn: Failed to get cached token or token is invalid. Err: %v", err)
 	} else if cachedToken != nil {
@@ -119,6 +125,10 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 		}
 	}
 
+	if s.cfg.DisableLogin {
+		return nil, errors.New("Failed to obtain new token. Refresh token expired or not specified.")
+	}
+
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
 	newToken, err := s.newToken()
 	if err != nil {
@@ -131,7 +141,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 // Verifier returns verifier for tokens.
 func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 	return s.oidcClient.Verifier(oidc.VerificationConfig{
-		ClientID:   s.cfg.ClientID,
+		ClientID:   s.cache.Config().ClientID,
 		ClaimNonce: s.nonce,
 	})
 }
@@ -163,7 +173,7 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 		return nil, fmt.Errorf("got expired access token in token from provider")
 	}
 
-	err = s.tokenCache.SetToken(token)
+	err = s.cache.SaveToken(token)
 	if err != nil {
 		s.logger.Printf("Warn: Cannot cache token. Err: %v", err)
 	}
@@ -255,7 +265,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		}
 
 		s.nonce = nonce
-		err = s.tokenCache.SetToken(msg.token)
+		err = s.cache.SaveToken(msg.token)
 		if err != nil {
 			s.logger.Printf("Warn: Cannot cache token. Err: %v", err)
 		}

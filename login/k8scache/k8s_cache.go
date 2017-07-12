@@ -10,10 +10,21 @@ import (
 	api "k8s.io/client-go/tools/clientcmd/api"
 )
 
+const (
+	IssuerUrl                = "idp-issuer-url"
+	ClientID                 = "client-id"
+	ClientSecret             = "client-secret"
+	CertificateAuthority     = "idp-certificate-authority"
+	CertificateAuthorityData = "idp-certificate-authority-data"
+	ExtraScopes              = "extra-scopes"
+	IDToken                  = "id-token"
+	RefreshToken             = "refresh-token"
+)
+
 var DefaultKubeConfigPath = cfg.RecommendedHomeFile
 
-// ConfigCache is an cache for OIDC tokens that installs token inside k8s user config directory in `Users:` sections of yaml.
-// It is convenient for initial install of token (possibly refresh-token) for OIDC auth-provider. It stores config following
+// Cache is an cache for OIDC tokens that installs token inside k8s user config directory in `Users:` sections of yaml.
+// It is convenient for initial install of token (and possibly refresh-token) for OIDC auth-provider. It stores config following
 // set-credentials way of saving credentials:
 //
 //users:
@@ -29,30 +40,83 @@ var DefaultKubeConfigPath = cfg.RecommendedHomeFile
 //        refresh-token: <[optional] refresh-token)
 //      name: oidc
 //
-type ConfigCache struct {
-	cfg            login.Config
+type Cache struct {
+	cfg            login.OIDCConfig
 	users          map[string]struct{}
 	kubeConfigPath string
 }
 
-// NewConfigCache constructs cache.
-func NewConfigCache(loginCfg login.Config, k8sUsers ...string) *ConfigCache {
+// NewCache constructs cache that installs specified configuration and token under given k8s users inside kubeconfig.
+func NewCache(kubeConfigPath string, loginCfg login.OIDCConfig, k8sUsers ...string) *Cache {
 	users := map[string]struct{}{}
 	// For easier lookup.
 	for _, u := range k8sUsers {
 		users[u] = struct{}{}
 	}
-	return &ConfigCache{cfg: loginCfg, users: users, kubeConfigPath: DefaultKubeConfigPath}
+	return &Cache{cfg: loginCfg, users: users, kubeConfigPath: kubeConfigPath}
+}
+
+// NewCacheFromUser constructs cache that assumes that required configuration (and optionally refresh token) is already cached
+// under given user inside kubeconfig. It returns error if configuration is not there.
+func NewCacheFromUser(kubeConfigPath string, k8sUser string) (*Cache, error) {
+	users := map[string]struct{}{
+		k8sUser: {},
+	}
+
+	k8sConfig, err := cfg.LoadFromFile(kubeConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
+			" permissions. Err: %v", kubeConfigPath, err)
+	}
+
+	loginCfg := login.OIDCConfig{}
+
+	// Try to fill config.
+	for name, user := range k8sConfig.AuthInfos {
+		if _, ok := users[name]; !ok {
+			continue
+		}
+
+		if user == nil || user.AuthProvider == nil || user.AuthProvider.Name != "oidc" {
+			return nil, fmt.Errorf("No OIDC auth provider section for user %s", name)
+		}
+
+		authConfig := user.AuthProvider.Config
+		var ok bool
+
+		loginCfg.Provider, ok = authConfig[IssuerUrl]
+		if !ok {
+			return nil, fmt.Errorf("No IssuerUrl for user %s", name)
+		}
+
+		loginCfg.ClientID, ok = authConfig[ClientID]
+		if !ok {
+			return nil, fmt.Errorf("No ClientID for user %s", name)
+		}
+
+		loginCfg.ClientSecret, ok = authConfig[ClientSecret]
+		if !ok {
+			return nil, fmt.Errorf("No ClientSecret for user %s", name)
+		}
+
+		var extraScopes []string
+		if scopes, ok := authConfig[ExtraScopes]; ok {
+			extraScopes = strings.Split(scopes, ",")
+		}
+		loginCfg.Scopes = defaultScopesWithExtra(extraScopes)
+	}
+
+	return &Cache{cfg: loginCfg, users: users, kubeConfigPath: kubeConfigPath}, nil
 }
 
 // SetConfigPath sets custom path as config path for kube config.
-func (c *ConfigCache) SetConfigPath(path string) {
+func (c *Cache) SetConfigPath(path string) {
 	c.kubeConfigPath = path
 }
 
-func extraScopes(cfg login.Config) []string {
+func extraScopes(configScopes []string) []string {
 	var extra []string
-	for _, scope := range cfg.Scopes {
+	for _, scope := range configScopes {
 		// --auth-provider-arg=extra-scopes=( comma separated list of scopes to add to "openid email profile", optional)
 		if scope == oidc.ScopeOpenID ||
 			scope == oidc.ScopeEmail ||
@@ -71,10 +135,21 @@ func extraScopes(cfg login.Config) []string {
 	return extra
 }
 
+func defaultScopesWithExtra(extraScopes []string) []string {
+	scopes := []string{
+		oidc.ScopeOpenID,
+		oidc.ScopeEmail,
+		oidc.ScopeProfile,
+		oidc.ScopeOfflineAccess,
+	}
+
+	return append(scopes, extraScopes...)
+}
+
 // Token retrieves the tokens from all of the registered users in kube config. It does not check if tokens are valid, however if the OIDC clients
 // data are different than configured in login.Config or one of the tokens for all specified k8s users is different - it
 // returns an error.
-func (c *ConfigCache) Token() (*oidc.Token, error) {
+func (c *Cache) Token() (*oidc.Token, error) {
 	k8sConfig, err := cfg.LoadFromFile(c.kubeConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
@@ -95,25 +170,25 @@ func (c *ConfigCache) Token() (*oidc.Token, error) {
 
 		authConfig := user.AuthProvider.Config
 		// Validates fields with given config.
-		if authConfig["client-id"] != c.cfg.ClientID {
+		if authConfig[ClientID] != c.cfg.ClientID {
 			return nil, fmt.Errorf("Wrong ClientID for user %s", name)
 		}
 
-		if authConfig["client-secret"] != c.cfg.ClientSecret {
+		if authConfig[ClientSecret] != c.cfg.ClientSecret {
 			return nil, fmt.Errorf("Wrong ClientSecret for user %s", name)
 		}
 
-		if !compareStringSlices(strings.Split(authConfig["extra-scopes"], ","), extraScopes(c.cfg)) {
+		if !compareStringSlices(strings.Split(authConfig[ExtraScopes], ","), extraScopes(c.cfg.Scopes)) {
 			return nil, fmt.Errorf("Extra scopes does not match for user %s", name)
 		}
 
-		if authConfig["idp-issuer-url"] != c.cfg.Provider {
+		if authConfig[IssuerUrl] != c.cfg.Provider {
 			return nil, fmt.Errorf("Wrong Issuer Identity Provider for user %s", name)
 		}
 
 		if token.RefreshToken == "" {
-			token.RefreshToken = authConfig["refresh-token"]
-		} else if token.RefreshToken != authConfig["refresh-token"] {
+			token.RefreshToken = authConfig[RefreshToken]
+		} else if token.RefreshToken != authConfig[RefreshToken] {
 			return nil, fmt.Errorf("Different RefreshTokens among users, found on user %s", name)
 		}
 	}
@@ -151,9 +226,9 @@ func compareStringSlices(x, y []string) bool {
 	return false
 }
 
-// SetToken saves token as k8s user's credentials inside k8s config directory. It saves the same thing for ALL specified
+// SaveToken saves token as k8s user's credentials inside k8s config directory. It saves the same thing for ALL specified
 // k8s users.
-func (c *ConfigCache) SetToken(token *oidc.Token) error {
+func (c *Cache) SaveToken(token *oidc.Token) error {
 	k8sConfig, err := cfg.LoadFromFile(c.kubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
@@ -165,13 +240,12 @@ func (c *ConfigCache) SetToken(token *oidc.Token) error {
 			AuthProvider: &api.AuthProviderConfig{
 				Name: "oidc",
 				Config: map[string]string{
-					"idp-issuer-url": c.cfg.Provider,
-					"client-id":      c.cfg.ClientID,
-					"client-secret":  c.cfg.ClientSecret,
-					"extra-scopes":   strings.Join(extraScopes(c.cfg), ","),
-
-					"refresh-token": token.RefreshToken,
-					"id-token":      token.IDToken,
+					IssuerUrl:    c.cfg.Provider,
+					ClientID:     c.cfg.ClientID,
+					ClientSecret: c.cfg.ClientSecret,
+					ExtraScopes:  strings.Join(extraScopes(c.cfg.Scopes), ","),
+					RefreshToken: token.RefreshToken,
+					IDToken:      token.IDToken,
 				},
 			},
 		}
@@ -182,9 +256,9 @@ func (c *ConfigCache) SetToken(token *oidc.Token) error {
 	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
 }
 
-// ClearIDToken removed ID token from config. It is useful when you want to refresh ID token but token did not yet
+// ClearIDToken removes ID token from config. It is useful when you want to refresh ID token but token did not yet
 // expire.
-func (c *ConfigCache) ClearIDToken() error {
+func (c *Cache) ClearIDToken() error {
 	k8sConfig, err := cfg.LoadFromFile(c.kubeConfigPath)
 	if err != nil {
 		return fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
@@ -208,4 +282,9 @@ func (c *ConfigCache) ClearIDToken() error {
 	}
 
 	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
+}
+
+// Config returns OIDC configuration.
+func (c *Cache) Config() login.OIDCConfig {
+	return c.cfg
 }
