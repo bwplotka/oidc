@@ -16,19 +16,23 @@ import (
 )
 
 func main() {
-    oidcConfig := login.Config{
+    oidcConfig := login.OIDCConfig{
         ClientID: "client1",
         ClientSecret: "secret1",
         Provider: "https://issuer-oidc.org",
-        BindAddress: "http://127.0.0.1:8883",
         // Make sure you ask for offline_access if you want to use refresh tokens!
         Scopes: []string{"openid", "email", "profile", "offline_access"},
+    }
+    
+    sourceConfig := login.Config{
+        BindAddress: "http://127.0.0.1:8883",
         NonceCheck: true,
+        DisableLogin: false,
     }
 
-    cache := disk.NewTokenCache(oidcConfig.ClientID, "~/.super_cache") // see also other caches e.g k8s.NewConfigCache.
+    cache := disk.NewCache(".super_cache", oidcConfig) // see also other caches e.g k8s.NewCache.
 
-	source, err := login.NewOIDCTokenSource(context.Background(), log.New(os.Stdout, "", 0), oidcConfig, cache)
+	source, err := login.NewOIDCTokenSource(context.Background(), log.New(os.Stdout, "", 0), sourceConfig, cache)
 	if err != nil {
 		// handle err...
 	}
@@ -50,3 +54,4 @@ func main() {
 refresh token (if present). If cache is empty, or refresh token is wrong it will perform full OIDC login to obtain token.
 
 NOTE: For login purposes and since it implements `code` OIDC flow, it requires browser to be available - it will not work on headless systems.
+If you wish to fail on expired/not valid refresh token - set login.Config.DisableLogin to true.
