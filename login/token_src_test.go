@@ -17,7 +17,6 @@ import (
 	"github.com/Bplotka/go-httpt/rt"
 	"github.com/Bplotka/go-jwt"
 	"github.com/Bplotka/oidc"
-	"github.com/Bplotka/oidc/login/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -46,10 +45,11 @@ type TokenSourceTestSuite struct {
 
 	testDiscovery oidc.DiscoveryJSON
 	testCfg       Config
+	testOIDCCfg   OIDCConfig
 
 	s *httpt.Server
 
-	cache      *mocks.TokenCache
+	cache      *MockCache
 	oidcSource *OIDCTokenSource
 
 	testCtx context.Context
@@ -96,31 +96,32 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 	s.s.On("GET", testIssuer+oidc.DiscoveryEndpoint).
 		Push(rt.JSONResponseFunc(http.StatusOK, jsonDiscovery))
 
-	s.testCfg = Config{
-		Provider:    testIssuer,
-		BindAddress: testBindAddress,
+	s.testOIDCCfg = OIDCConfig{
+		Provider: testIssuer,
 
 		ClientID:     testClientID,
 		ClientSecret: testClientSecret,
 		Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeEmail},
-
-		NonceCheck: true,
+	}
+	s.testCfg = Config{
+		BindAddress: testBindAddress,
+		NonceCheck:  true,
 	}
 
-	s.cache = new(mocks.TokenCache)
+	s.cache = new(MockCache)
 	bindURL, err := url.Parse(s.testCfg.BindAddress)
 	s.Require().NoError(err)
 
-	oidcClient, err := oidc.NewClient(s.testCtx, s.testCfg.Provider)
+	oidcClient, err := oidc.NewClient(s.testCtx, s.testOIDCCfg.Provider)
 	s.Require().NoError(err)
 
 	s.oidcSource = &OIDCTokenSource{
 		ctx:    s.testCtx,
 		logger: log.New(os.Stdout, "", 0),
+		cfg:    s.testCfg,
 
 		oidcClient:  oidcClient,
-		tokenCache:  s.cache,
-		cfg:         s.testCfg,
+		cache:       s.cache,
 		bindURL:     bindURL,
 		openBrowser: openBrowser,
 
@@ -142,8 +143,9 @@ func (s *TokenSourceTestSuite) SetupTest() {
 		return ""
 	}
 
-	s.cache = new(mocks.TokenCache)
-	s.oidcSource.tokenCache = s.cache
+	s.cache = new(MockCache)
+	s.cache.On("Config").Return(s.testOIDCCfg)
+	s.oidcSource.cache = s.cache
 }
 
 func TestTokenSourceTestSuite(t *testing.T) {
@@ -210,7 +212,7 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 			testClientID,
 			expectedWord,
 			url.QueryEscape(redirectURL),
-			strings.Join(s.testCfg.Scopes, "+"),
+			strings.Join(s.testOIDCCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
 
@@ -254,7 +256,7 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 
 func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 	s.cache.On("Token").Return(nil, errors.New("test_err"))
-	s.cache.On("SetToken", &testToken).Return(nil)
+	s.cache.On("SaveToken", &testToken).Return(nil)
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
@@ -273,7 +275,7 @@ func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
 	s.cache.On("Token").Return(nil, nil)
-	s.cache.On("SetToken", &testToken).Return(nil)
+	s.cache.On("SaveToken", &testToken).Return(nil)
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
@@ -299,7 +301,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	idTokenOkNonce, jwkSetJSON2 := s.validIDToken(s.oidcSource.nonce)
 	expectedToken := invalidToken
 	expectedToken.IDToken = idTokenOkNonce
-	s.cache.On("SetToken", &expectedToken).Return(nil)
+	s.cache.On("SaveToken", &expectedToken).Return(nil)
 
 	// For first verification inside OIDC TokenSource.
 	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
@@ -333,7 +335,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 	invalidToken := testToken
 	invalidToken.IDToken = idToken
 	s.cache.On("Token").Return(&invalidToken, nil)
-	s.cache.On("SetToken", &testToken).Return(nil)
+	s.cache.On("SaveToken", &testToken).Return(nil)
 
 	// For first verification inside OIDC TokenSource.
 	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
@@ -372,7 +374,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 			testClientID,
 			expectedWord,
 			url.QueryEscape(redirectURL),
-			strings.Join(s.testCfg.Scopes, "+"),
+			strings.Join(s.testOIDCCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
 

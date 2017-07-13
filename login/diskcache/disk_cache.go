@@ -8,36 +8,38 @@ import (
 	"path/filepath"
 
 	"github.com/Bplotka/oidc"
+	"github.com/Bplotka/oidc/login"
 )
 
-// DefaultTokenCachePath is default path for OIDC tokens.
-const DefaultTokenCachePath = "$HOME/.oidc_keys"
+// DefaultCachePath is default path for OIDC tokens.
+const DefaultCachePath = "$HOME/.oidc_keys"
 
-// TokenCache is a oidc Token caching structure that stores all tokens on disk.
+// Cache is a oidc caching structure that stores all tokens on disk.
 // Tokens cache files are named after clientID and arg[0].
 // NOTE: There is no logic for cleaning cache in case of change in clientID.
-type TokenCache struct {
+// NOTE: There is no logic for caching configuration as well.
+type Cache struct {
+	cfg       login.OIDCConfig
 	storePath string
-	clientID  string
 }
 
 // NewTokenCache constructs disk cache.
-func NewTokenCache(clientID string, path string) *TokenCache {
-	return &TokenCache{storePath: os.ExpandEnv(path), clientID: clientID}
+func NewCache(path string, cfg login.OIDCConfig) *Cache {
+	return &Cache{cfg: cfg, storePath: os.ExpandEnv(path)}
 }
 
-func (c *TokenCache) getOrCreateStoreDir() (string, error) {
+func (c *Cache) getOrCreateStoreDir() (string, error) {
 	err := os.MkdirAll(c.storePath, os.ModeDir|0700)
 	return c.storePath, err
 }
 
-func (c *TokenCache) tokenCacheFileName() string {
+func (c *Cache) tokenCacheFileName() string {
 	cliToolName := filepath.Base(os.Args[0])
-	return fmt.Sprintf("token_%s_%s", cliToolName, c.clientID)
+	return fmt.Sprintf("token_%s_%s", cliToolName, c.cfg.ClientID)
 }
 
 // Token retrieves token from file.
-func (c *TokenCache) Token() (*oidc.Token, error) {
+func (c *Cache) Token() (*oidc.Token, error) {
 	storeDir, err := c.getOrCreateStoreDir()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create store dir. Err: %v", err)
@@ -59,8 +61,8 @@ func (c *TokenCache) Token() (*oidc.Token, error) {
 	return token, nil
 }
 
-// SetToken saves token in file.
-func (c *TokenCache) SetToken(token *oidc.Token) error {
+// SaveToken saves token in file.
+func (c *Cache) SaveToken(token *oidc.Token) error {
 	storeDir, err := c.getOrCreateStoreDir()
 	if err != nil {
 		return err
@@ -77,4 +79,9 @@ func (c *TokenCache) SetToken(token *oidc.Token) error {
 	}
 
 	return nil
+}
+
+// Config returns OIDC configuration.
+func (c *Cache) Config() login.OIDCConfig {
+	return c.cfg
 }
