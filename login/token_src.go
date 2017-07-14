@@ -114,7 +114,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 		}
 
 		if cachedToken.RefreshToken != "" {
-			// Only if we have refresh token, we can refresh IDToken.
+			// Only if we have refresh token, we can refresh NewIDToken.
 			oidcToken, err := s.refreshToken(cachedToken.RefreshToken)
 			if err == nil {
 				return oidcToken, nil

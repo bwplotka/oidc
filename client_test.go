@@ -53,10 +53,6 @@ func TestClientTestSuite(t *testing.T) {
 	suite.Run(t, &ClientTestSuite{})
 }
 
-func (s *ClientTestSuite) Test() {
-	// TODO
-}
-
 func TestTokenResponseExpiry(t *testing.T) {
 	expiresIn := 10
 

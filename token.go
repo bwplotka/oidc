@@ -29,26 +29,26 @@ type Token struct {
 	// RefreshToken is used to refresh the access token and ID token if they expire.
 	RefreshToken string `json:"refresh_token,omitempty"`
 
-	// IDToken is a security token that contains Claims about the Authentication of an End-User by an Authorization
+	// NewIDToken is a security token that contains Claims about the Authentication of an End-User by an Authorization
 	// Server when using a Client, and potentially other requested Claims that helps in authorization itself.
 	// The ID Token is always represented as a JWT.
 	IDToken string `json:"id_token"`
 }
 
-// Claims unmarshals the raw JSON payload of the IDToken into a provided struct.
+// Claims unmarshals the raw JSON payload of the NewIDToken into a provided struct.
 //
 //		var claims struct {
 //			Email         string `json:"email"`
 //			EmailVerified bool   `json:"email_verified"`
 //		}
-//		if err := oidc.Token{IDToken: "<id token>"}.Claims(idTokenVerifier, &claims); err != nil {
+//		if err := oidc.Token{NewIDToken: "<id token>"}.Claims(idTokenVerifier, &claims); err != nil {
 //			// handle error
 //		}
 //
 func (t Token) Claims(ctx context.Context, verifier Verifier, v interface{}) error {
 	idToken, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
-		return fmt.Errorf("cannot get claims. Failed to verify and parse IDToken. Err: %v", err)
+		return fmt.Errorf("cannot get claims. Failed to verify and parse NewIDToken. Err: %v", err)
 	}
 
 	return idToken.Claims(v)
@@ -79,7 +79,7 @@ func (t *Token) Valid(ctx context.Context, verifier Verifier) bool {
 	return t.AccessToken != "" && !t.IsAccessTokenExpired()
 }
 
-// IDToken is an OpenID Connect extension that provides a predictable representation
+// NewIDToken is an OpenID Connect extension that provides a predictable representation
 // of an authorization event.
 //
 // The ID Token only holds fields OpenID Connect requires. To access additional
