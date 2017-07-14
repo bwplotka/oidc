@@ -13,20 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bplotka/go-httpt"
 	"github.com/Bplotka/go-httpt/rt"
-	"github.com/Bplotka/go-jwt"
 	"github.com/Bplotka/oidc"
+	"github.com/Bplotka/oidc/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/net/context"
-	"gopkg.in/square/go-jose.v2"
 )
 
 const (
-	testIssuer       = "https://issuer.org"
 	testBindAddress  = "http://127.0.0.1:0/something"
+	testSubject      = "subject1"
 	testClientID     = "clientID1"
 	testClientSecret = "secret1"
 	testNonce        = "nonce1"
@@ -43,61 +40,22 @@ var (
 type TokenSourceTestSuite struct {
 	suite.Suite
 
-	testDiscovery oidc.DiscoveryJSON
-	testCfg       Config
-	testOIDCCfg   OIDCConfig
-
-	s *httpt.Server
+	testCfg     Config
+	testOIDCCfg OIDCConfig
 
 	cache      *MockCache
 	oidcSource *OIDCTokenSource
 
-	testCtx context.Context
-}
-
-func (s *TokenSourceTestSuite) validIDToken(nonce string) (idToken string, jwkSetJSON []byte) {
-	builder, err := jwt.NewDefaultBuilder()
-	s.Require().NoError(err)
-
-	issuedAt := time.Now()
-	token, err := builder.JWS().Claims(&oidc.IDToken{
-		Issuer:   testIssuer,
-		Nonce:    nonce,
-		Expiry:   oidc.NewNumericDate(issuedAt.Add(1 * time.Hour)),
-		IssuedAt: oidc.NewNumericDate(issuedAt),
-		Subject:  "subject1",
-		Audience: []string{testClientID},
-	}).CompactSerialize()
-	s.Require().NoError(err)
-
-	set := jose.JSONWebKeySet{
-		Keys: []jose.JSONWebKey{builder.PublicJWK()},
-	}
-
-	jwkSetJSON, err = json.Marshal(&set)
-	s.Require().NoError(err)
-	return token, jwkSetJSON
+	provider *oidc_testing.Provider
 }
 
 func (s *TokenSourceTestSuite) SetupSuite() {
-	s.testDiscovery = oidc.DiscoveryJSON{
-		Issuer:   testIssuer,
-		AuthURL:  testIssuer + "/auth1",
-		TokenURL: testIssuer + "/token1",
-		JWKSURL:  testIssuer + "/jwks1",
-	}
-
-	jsonDiscovery, err := json.Marshal(s.testDiscovery)
-	s.Require().NoError(err)
-
-	s.s = httpt.NewServer(s.T())
-	s.testCtx = context.WithValue(context.TODO(), oidc.HTTPClientCtxKey, s.s.HTTPClient())
-
-	s.s.On("GET", testIssuer+oidc.DiscoveryEndpoint).
-		Push(rt.JSONResponseFunc(http.StatusOK, jsonDiscovery))
+	s.provider = &oidc_testing.Provider{}
+	s.provider.Setup(s.T())
+	s.provider.MockDiscoveryCall()
 
 	s.testOIDCCfg = OIDCConfig{
-		Provider: testIssuer,
+		Provider: s.provider.IssuerURL,
 
 		ClientID:     testClientID,
 		ClientSecret: testClientSecret,
@@ -112,11 +70,11 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 	bindURL, err := url.Parse(s.testCfg.BindAddress)
 	s.Require().NoError(err)
 
-	oidcClient, err := oidc.NewClient(s.testCtx, s.testOIDCCfg.Provider)
+	oidcClient, err := oidc.NewClient(s.provider.Context(), s.testOIDCCfg.Provider)
 	s.Require().NoError(err)
 
 	s.oidcSource = &OIDCTokenSource{
-		ctx:    s.testCtx,
+		ctx:    s.provider.Context(),
 		logger: log.New(os.Stdout, "", 0),
 		cfg:    s.testCfg,
 
@@ -130,7 +88,7 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 }
 
 func (s *TokenSourceTestSuite) SetupTest() {
-	s.s.Reset()
+	s.provider.Mock().Reset()
 
 	s.oidcSource.openBrowser = func(string) error {
 		s.T().Errorf("OpenBrowser Not mocked")
@@ -162,12 +120,12 @@ func TestCallbackURL(t *testing.T) {
 // Below tests invokes local server - can be flaky due to timing issues. (Server did not have time to be closed).
 
 func (s *TokenSourceTestSuite) Test_CacheOK() {
-	idToken, jwkSetJSON := s.validIDToken(s.oidcSource.nonce)
+	idToken, jwkSetJSON := s.provider.NewIDToken(testClientID, testSubject, s.oidcSource.nonce)
 	expectedToken := testToken
 	expectedToken.IDToken = idToken
 	s.cache.On("Token").Return(&expectedToken, nil)
 
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
+	s.provider.MockPubKeysCall(jwkSetJSON)
 
 	token, err := s.oidcSource.OIDCToken()
 	s.Require().NoError(err)
@@ -175,7 +133,7 @@ func (s *TokenSourceTestSuite) Test_CacheOK() {
 	s.Equal(expectedToken, *token)
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }
 
 // stripArgFromURL strips out arg value from URL.
@@ -225,7 +183,7 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 		tokenJSON, err := json.Marshal(t)
 		s.Require().NoError(err)
 
-		s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
+		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
 		req, err := http.NewRequest("GET", fmt.Sprintf(
 			"%s?code=%s&state=%s",
@@ -270,7 +228,7 @@ func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 	s.Equal(testToken, *token)
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
@@ -289,22 +247,22 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
 	s.Equal(testToken, *token)
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }
 
 func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
-	idToken, jwkSetJSON := s.validIDToken("wrongNonce")
+	idToken, jwkSetJSON := s.provider.NewIDToken(testClientID, testSubject, "wrongNonce")
 	invalidToken := testToken
 	invalidToken.IDToken = idToken
 	s.cache.On("Token").Return(&invalidToken, nil)
 
-	idTokenOkNonce, jwkSetJSON2 := s.validIDToken(s.oidcSource.nonce)
+	idTokenOkNonce, jwkSetJSON2 := s.provider.NewIDToken(testClientID, testSubject, s.oidcSource.nonce)
 	expectedToken := invalidToken
 	expectedToken.IDToken = idTokenOkNonce
 	s.cache.On("SaveToken", &expectedToken).Return(nil)
 
 	// For first verification inside OIDC TokenSource.
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
+	s.provider.MockPubKeysCall(jwkSetJSON)
 
 	// OK Refresh response.
 	t := oidc.TokenResponse{
@@ -316,10 +274,10 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	tokenJSON, err := json.Marshal(t)
 	s.Require().NoError(err)
 
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
+	s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
 	// For 2th verification inside reuse TokenSource.
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON2))
+	s.provider.MockPubKeysCall(jwkSetJSON2)
 
 	token, err := s.oidcSource.OIDCToken()
 	s.Require().NoError(err)
@@ -327,20 +285,20 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	s.Equal(expectedToken, *token)
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }
 
 func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_OK() {
-	idToken, jwkSetJSON := s.validIDToken("wrongNonce")
+	idToken, jwkSetJSON := s.provider.NewIDToken(testClientID, testSubject, "wrongNonce")
 	invalidToken := testToken
 	invalidToken.IDToken = idToken
 	s.cache.On("Token").Return(&invalidToken, nil)
 	s.cache.On("SaveToken", &testToken).Return(nil)
 
 	// For first verification inside OIDC TokenSource.
-	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
+	s.provider.MockPubKeysCall(jwkSetJSON)
 
-	s.s.Push(rt.JSONResponseFunc(http.StatusBadRequest, []byte(`{"error": "bad_request"}`)))
+	s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusBadRequest, []byte(`{"error": "bad_request"}`)))
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
@@ -354,7 +312,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 	s.Equal(testToken, *token)
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
@@ -378,7 +336,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 			expectedWord,
 		), urlToGet)
 
-		s.s.Push(rt.JSONResponseFunc(http.StatusGatewayTimeout, []byte(`{"error": "temporary unavailable"}`)))
+		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusGatewayTimeout, []byte(`{"error": "temporary unavailable"}`)))
 
 		req, err := http.NewRequest("GET", fmt.Sprintf(
 			"%s?code=%s&state=%s",
@@ -412,5 +370,5 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: \nResponse: {\"error\": \"temporary unavailable\"}", err.Error())
 
 	s.cache.AssertExpectations(s.T())
-	s.Equal(0, s.s.Len())
+	s.Equal(0, s.provider.Mock().Len())
 }

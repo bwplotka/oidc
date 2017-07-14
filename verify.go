@@ -22,7 +22,7 @@ const (
 
 //go:generate mockery -name Verifier -case underscore
 
-// Verifier is anything that can verify token and returned parsed standard oidc.IDToken.
+// Verifier is anything that can verify token and returned parsed standard oidc.NewIDToken.
 // For example oidc.IDTokenVerifier.
 type Verifier interface {
 	Verify(ctx context.Context, rawIDToken string) (*IDToken, error)
