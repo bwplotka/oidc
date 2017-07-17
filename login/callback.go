@@ -7,11 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/Bplotka/oidc"
 )
@@ -50,9 +54,134 @@ func openBrowser(url string) error {
 	return exec.Command(cmd, args...).Start()
 }
 
-type callbackMsg struct {
+// callbackResponse contains return message from callback server including token or error.
+type callbackResponse struct {
 	token *oidc.Token
 	err   error
+}
+
+// callbackRequest specifies values that are needed for expected callback handling.
+type callbackRequest struct {
+	ctx           context.Context
+	expectedState string
+
+	cfg    oidc.Config
+	client *oidc.Client
+}
+
+// CallbackServer carries a callback handler for OIDC auth code flow.
+// NOTE: This is not thread-safe in terms of multiple logins in the same time.
+type CallbackServer struct {
+	redirectURL string
+	callbackCh  chan *callbackResponse
+
+	// If empty, nothing is expected, so callback should immediately return err.
+	callbackReqMu sync.Mutex
+	callbackReq   *callbackRequest
+}
+
+// NewServer creates HTTP server with OIDC callback on the bindAddress an argument. BindAddress is the ultimately a redirectURL that all clients MUST register
+// first on the OIDC server. It can (and is recommended) to point to localhost. Bind Address must include port. You can specify 0 if your
+// OIDC provider support wildcard on port (almost all server does NOT).
+func NewServer(bindAddress string) (srv *CallbackServer, closeSrv func(), err error) {
+	bindURL, err := url.Parse(bindAddress)
+	if err != nil {
+		return nil, nil, fmt.Errorf("BindAddress is not in a form of URL. Err: %v", err)
+	}
+
+	listener, err := net.Listen("tcp", bindURL.Host)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Failed to Listen for tcp on: %s. Err: %v", bindURL.Host, err)
+	}
+
+	s := &CallbackServer{
+		redirectURL: fmt.Sprintf("http://%s%s", listener.Addr().String(), bindURL.Path),
+		callbackCh:  make(chan *callbackResponse),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc(bindURL.Path, s.callbackHandler)
+
+	go func() {
+		http.Serve(listener, mux)
+	}()
+
+	return s, func() {
+		listener.Close()
+		close(s.callbackCh)
+	}, nil
+}
+
+// NewReuseServer creates HTTP server with OIDC callback registered on given HTTP mux. Server constructed in such way
+// is not responsible for serving the callback. This is responsibility of the caller.
+func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) (*CallbackServer, error) {
+	s := &CallbackServer{
+		redirectURL: fmt.Sprintf("http://%s%s", listenAddress, pattern),
+		callbackCh:  make(chan *callbackResponse),
+	}
+	mux.HandleFunc(pattern, s.callbackHandler)
+
+	quit := make(chan os.Signal)
+	signal.Notify(quit, os.Interrupt)
+	go func() {
+		<-quit
+		close(s.callbackCh)
+	}()
+	return s, nil
+}
+
+// callbackHandler handles redirect from OIDC provider with either code or error parameters.
+// If none callback is expected it will return error.
+// In case of valid code with corresponded state it will perform token exchange with OIDC provider.
+// Any message is propagated via Go channel if the callback was expected.
+// NOTE: This is not thread-safe in terms of multiple logins in the same time.
+func (s *CallbackServer) callbackHandler(w http.ResponseWriter, r *http.Request) {
+	s.callbackReqMu.Lock()
+	defer s.callbackReqMu.Unlock()
+
+	if s.callbackReq == nil {
+		w.WriteHeader(http.StatusPreconditionFailed)
+		w.Write([]byte("Did not expect OIDC callback"))
+		return
+	}
+	defer func() {
+		s.callbackReq = nil
+	}()
+
+	err := r.ParseForm()
+	if err != nil {
+		err := fmt.Errorf("Failed to parse request form. Err: %v", err)
+		s.errRespond(w, r, err)
+		return
+	}
+
+	code, state, err := parseCallbackRequest(r.Form)
+	if err != nil {
+		s.errRespond(w, r, err)
+		return
+	}
+
+	if state != s.callbackReq.expectedState {
+		err := fmt.Errorf("Invalid state parameter. Got %s, expected: %s", state, s.callbackReq.expectedState)
+		s.errRespond(w, r, err)
+		return
+	}
+
+	ctx := mergeContexts(r.Context(), s.callbackReq.ctx)
+	oidcToken, err := s.callbackReq.client.Exchange(ctx, s.callbackReq.cfg, code)
+	if err != nil {
+		s.errRespond(w, r, err)
+		return
+	}
+
+	callbackResponse := &callbackResponse{
+		token: oidcToken,
+	}
+	OKCallbackResponse(w, r)
+	select {
+	case <-s.callbackReq.ctx.Done():
+	case s.callbackCh <- callbackResponse:
+	}
+	return
 }
 
 func parseCallbackRequest(form url.Values) (code string, state string, err error) {
@@ -88,12 +217,16 @@ var ErrCallbackResponse = func(w http.ResponseWriter, _ *http.Request, _ error) 
 	w.Write([]byte("OIDC authentication flow is completed. You can close browser tab."))
 }
 
-func errRespond(w http.ResponseWriter, r *http.Request, err error, callbackChan chan<- *callbackMsg) {
-	callbackResponse := &callbackMsg{
+func (s *CallbackServer) errRespond(w http.ResponseWriter, r *http.Request, err error) {
+	callbackResponse := &callbackResponse{
 		err: err,
 	}
 	ErrCallbackResponse(w, r, err)
-	callbackChan <- callbackResponse
+
+	select {
+	case <-s.callbackReq.ctx.Done():
+	case s.callbackCh <- callbackResponse:
+	}
 	return
 }
 
@@ -104,49 +237,16 @@ func mergeContexts(originalCtx context.Context, oidcCtx context.Context) context
 	return context.WithValue(originalCtx, oidc.HTTPClientCtxKey, oidcCtx.Value(oidc.HTTPClientCtxKey))
 }
 
-// callbackHandler handles redirect from OIDC provider with either code or error parameters.
-// In case of valid code with corresponded state it will perform token exchange with OIDC provider.
-// Any message is propagated via Go channel.
-func callbackHandler(
-	oidcCtx context.Context,
-	oidcClient *oidc.Client,
-	oidcConfig oidc.Config,
-	expectedState string,
-	callbackChan chan<- *callbackMsg,
-) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := mergeContexts(r.Context(), oidcCtx)
+func (s *CallbackServer) ExpectCallback(callbackReq *callbackRequest) {
+	s.callbackReqMu.Lock()
+	defer s.callbackReqMu.Unlock()
+	s.callbackReq = callbackReq
+}
 
-		err := r.ParseForm()
-		if err != nil {
-			err := fmt.Errorf("Failed to parse request form. Err: %v", err)
-			errRespond(w, r, err, callbackChan)
-			return
-		}
+func (s *CallbackServer) Callback() <-chan *callbackResponse {
+	return s.callbackCh
+}
 
-		code, state, err := parseCallbackRequest(r.Form)
-		if err != nil {
-			errRespond(w, r, err, callbackChan)
-			return
-		}
-
-		if state != expectedState {
-			err := fmt.Errorf("Invalid state parameter. Got %s, expected: %s", state, expectedState)
-			errRespond(w, r, err, callbackChan)
-			return
-		}
-
-		oidcToken, err := oidcClient.Exchange(ctx, oidcConfig, code)
-		if err != nil {
-			errRespond(w, r, err, callbackChan)
-			return
-		}
-
-		callbackResponse := &callbackMsg{
-			token: oidcToken,
-		}
-		OKCallbackResponse(w, r)
-		callbackChan <- callbackResponse
-		return
-	}
+func (s *CallbackServer) RedirectURL() string {
+	return s.redirectURL
 }

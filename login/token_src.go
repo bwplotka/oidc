@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -14,8 +12,6 @@ import (
 
 	"github.com/Bplotka/oidc"
 )
-
-const callbackPath = "/callback"
 
 //go:generate mockery -name Cache -case underscore -inpkg
 
@@ -41,20 +37,15 @@ type OIDCTokenSource struct {
 	cache Cache
 	nonce string
 
-	bindURL *url.URL
-
+	callbackSrv  *CallbackServer
 	openBrowser  func(string) error
 	genRandToken func() string
 }
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache) (oidc.TokenSource, error) {
-	bindURL, err := url.Parse(cfg.BindAddress)
-	if err != nil {
-		return nil, fmt.Errorf("BindAddress or Issuer are not in a form of URL. Err: %v", err)
-	}
-
+// NOTE: If loginServer is nil, login is disabled.
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (oidc.TokenSource, error) {
 	oidcClient, err := oidc.NewClient(ctx, cache.Config().Provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
@@ -66,9 +57,9 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 		cfg:    cfg,
 
 		oidcClient: oidcClient,
+		cache:      cache,
 
-		cache:        cache,
-		bindURL:      bindURL,
+		callbackSrv:  callbackSrv,
 		openBrowser:  openBrowser,
 		genRandToken: rand128Bits,
 	}
@@ -124,11 +115,6 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 			s.logger.Printf("Warn: Refresh token expired. Err: %v", err)
 		}
 	}
-
-	if s.cfg.DisableLogin {
-		return nil, errors.New("Failed to obtain new token. Refresh token expired or not specified.")
-	}
-
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
 	newToken, err := s.newToken()
 	if err != nil {
@@ -181,26 +167,16 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 	return token, nil
 }
 
-func (s *OIDCTokenSource) prefixPath() string {
-	if s.bindURL.Path != "" {
-		return s.bindURL.Path
-	}
-	return "/"
-}
-
-func callbackURL(u *url.URL) string {
-	return u.Path + callbackPath
-}
-
-// newToken starts short-living server that exposes callback handler and opens browser to call Provider auth endpoint
-// with response type set to `code`.
-// NOTE: this flow will fail on any random request that will fly to callback request. Currently there is no way to differentiate
-// it with proper redirect call from Provider.
+// newToken calls URL to Provider auth endpoint via browser with response type set to `code`. The URL have redirectURL set
+// to CallbackServer that exposes callback handler.
+// In case of none CallbackServer it will block login.
+// NOTE: this flow will fail on any random request that will fly to callback handler in the moment of running this method.
+// Currently there is no way to differentiate it with proper redirect call from Provider.
 func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
-	s.logger.Print("Debug: Perfoming auth Code flow to obtain entirely new OIDC token.")
-
-	callbackChan := make(chan *callbackMsg, 1)
-	srvClosed := make(chan struct{}, 1)
+	if s.callbackSrv == nil {
+		return nil, errors.New("Refresh token expired or not specified. Login disabled.")
+	}
+	s.logger.Print("Debug: Performing auth Code flow to obtain entirely new OIDC token.")
 
 	state := s.genRandToken()
 	nonce := ""
@@ -213,37 +189,16 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	ctx, cancel := context.WithTimeout(s.ctx, 1*time.Minute)
 	defer cancel()
 
-	// TODO(bplotka): Consider having server up for a whole life of tokenSource.
-	listener, err := net.Listen("tcp", s.bindURL.Host)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to Listen for tcp on: %s. Err: %v", s.bindURL.Host, err)
-	}
+	s.callbackSrv.ExpectCallback(&callbackRequest{
+		ctx:           ctx,
+		expectedState: state,
+		client:        s.oidcClient,
+		cfg:           s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()),
+	})
 
-	redirectURL := fmt.Sprintf("http://%s%s", listener.Addr().String(), callbackURL(s.bindURL))
-
-	handler := http.NewServeMux()
-	handler.HandleFunc(callbackURL(s.bindURL), callbackHandler(
-		ctx,
-		s.oidcClient,
-		s.getOIDCConfigWithRedirectURL(redirectURL),
-		state,
-		callbackChan,
-	))
-
-	go func() {
-		http.Serve(listener, handler)
-		srvClosed <- struct{}{}
-		cancel()
-	}()
-	defer func() {
-		// Move to shutdown.
-		listener.Close()
-		close(callbackChan)
-	}()
-
-	authURL := s.oidcClient.AuthCodeURL(s.getOIDCConfigWithRedirectURL(redirectURL), state, extra)
+	authURL := s.oidcClient.AuthCodeURL(s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()), state, extra)
 	s.logger.Printf("Info: Opening browser to access URL: %s", authURL)
-	err = s.openBrowser(authURL)
+	err := s.openBrowser(authURL)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: Failed to open browser. Please open this URL in browser: %s Err: %v", authURL, err)
 	}
@@ -257,7 +212,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 
 	select {
 	// TODO(bplotka): What if someone will scan our callback endpoint?
-	case msg := <-callbackChan:
+	case msg := <-s.callbackSrv.Callback():
 		// Give some time for server to finish request.
 		time.Sleep(200 * time.Millisecond)
 		if msg.err != nil {
