@@ -10,9 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
@@ -119,13 +117,6 @@ func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) *C
 		callbackCh:  make(chan *callbackResponse),
 	}
 	mux.HandleFunc(pattern, s.callbackHandler)
-
-	quit := make(chan os.Signal)
-	signal.Notify(quit, os.Interrupt)
-	go func() {
-		<-quit
-		close(s.callbackCh)
-	}()
 	return s
 }
 
