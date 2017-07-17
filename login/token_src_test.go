@@ -16,13 +16,11 @@ import (
 	"github.com/Bplotka/go-httpt/rt"
 	"github.com/Bplotka/oidc"
 	"github.com/Bplotka/oidc/testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
 const (
-	testBindAddress  = "http://127.0.0.1:0/something"
+	testBindAddress  = "http://127.0.0.1:0/something/callback"
 	testSubject      = "subject1"
 	testClientID     = "clientID1"
 	testClientSecret = "secret1"
@@ -47,6 +45,8 @@ type TokenSourceTestSuite struct {
 	oidcSource *OIDCTokenSource
 
 	provider *oidc_testing.Provider
+
+	closeSrv func()
 }
 
 func (s *TokenSourceTestSuite) SetupSuite() {
@@ -62,13 +62,15 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 		Scopes:       []string{oidc.ScopeOpenID, oidc.ScopeEmail},
 	}
 	s.testCfg = Config{
-		BindAddress: testBindAddress,
-		NonceCheck:  true,
+		NonceCheck: true,
 	}
 
 	s.cache = new(MockCache)
-	bindURL, err := url.Parse(s.testCfg.BindAddress)
+
+	callbackSrv, closeSrv, err := NewServer(testBindAddress)
 	s.Require().NoError(err)
+
+	s.closeSrv = closeSrv
 
 	oidcClient, err := oidc.NewClient(s.provider.Context(), s.testOIDCCfg.Provider)
 	s.Require().NoError(err)
@@ -80,11 +82,14 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 
 		oidcClient:  oidcClient,
 		cache:       s.cache,
-		bindURL:     bindURL,
 		openBrowser: openBrowser,
-
-		nonce: testNonce,
+		callbackSrv: callbackSrv,
+		nonce:       testNonce,
 	}
+}
+
+func (s *TokenSourceTestSuite) TearDownSuite() {
+	s.closeSrv()
 }
 
 func (s *TokenSourceTestSuite) SetupTest() {
@@ -109,15 +114,6 @@ func (s *TokenSourceTestSuite) SetupTest() {
 func TestTokenSourceTestSuite(t *testing.T) {
 	suite.Run(t, &TokenSourceTestSuite{})
 }
-
-func TestCallbackURL(t *testing.T) {
-	bindURL, err := url.Parse(testBindAddress)
-	require.NoError(t, err)
-	assert.Equal(t, "127.0.0.1:0", bindURL.Host)
-	assert.Equal(t, "/something/callback", callbackURL(bindURL))
-}
-
-// Below tests invokes local server - can be flaky due to timing issues. (Server did not have time to be closed).
 
 func (s *TokenSourceTestSuite) Test_CacheOK() {
 	idToken, jwkSetJSON := s.provider.NewIDToken(testClientID, testSubject, s.oidcSource.nonce)
@@ -185,29 +181,32 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 
 		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
-		req, err := http.NewRequest("GET", fmt.Sprintf(
-			"%s?code=%s&state=%s",
-			redirectURL,
-			"code1",
-			expectedWord,
-		), nil)
-		s.Require().NoError(err)
+		go func() {
+			// Perform actual request in go routine.
+			req, err := http.NewRequest("GET", fmt.Sprintf(
+				"%s?code=%s&state=%s",
+				redirectURL,
+				"code1",
+				expectedWord,
+			), nil)
+			s.Require().NoError(err)
 
-		u, err := url.Parse(redirectURL)
-		s.Require().NoError(err)
-		for i := 0; i <= 5; i++ {
-			_, err = net.Dial("tcp", u.Host)
-			if err == nil {
-				break
+			u, err := url.Parse(redirectURL)
+			s.Require().NoError(err)
+			for i := 0; i <= 5; i++ {
+				_, err = net.Dial("tcp", u.Host)
+				if err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		s.Require().NoError(err, "Server should be able to start and listen on provided address.")
+			s.Require().NoError(err, "Server should be able to start and listen on provided address.")
 
-		res, err := http.DefaultClient.Do(req)
-		s.Require().NoError(err)
+			res, err := http.DefaultClient.Do(req)
+			s.Require().NoError(err)
 
-		s.Equal(http.StatusOK, res.StatusCode)
+			s.Equal(http.StatusOK, res.StatusCode)
+		}()
 		return nil
 	}
 }
@@ -338,30 +337,33 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 
 		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusGatewayTimeout, []byte(`{"error": "temporary unavailable"}`)))
 
-		req, err := http.NewRequest("GET", fmt.Sprintf(
-			"%s?code=%s&state=%s",
-			redirectURL,
-			"code1",
-			expectedWord,
-		), nil)
-		s.Require().NoError(err)
+		go func() {
+			req, err := http.NewRequest("GET", fmt.Sprintf(
+				"%s?code=%s&state=%s",
+				redirectURL,
+				"code1",
+				expectedWord,
+			), nil)
+			s.Require().NoError(err)
 
-		u, err := url.Parse(redirectURL)
-		s.Require().NoError(err)
-		for i := 0; i <= 5; i++ {
-			_, err = net.Dial("tcp", u.Host)
-			if err == nil {
-				break
+			u, err := url.Parse(redirectURL)
+			s.Require().NoError(err)
+			for i := 0; i <= 5; i++ {
+				_, err = net.Dial("tcp", u.Host)
+				if err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		s.Require().NoError(err)
+			s.Require().NoError(err)
 
-		res, err := http.DefaultClient.Do(req)
-		s.Require().NoError(err)
+			res, err := http.DefaultClient.Do(req)
+			s.Require().NoError(err)
 
-		// Still it should be ok.
-		s.Equal(http.StatusOK, res.StatusCode)
+			// Still it should be ok.
+			s.Equal(http.StatusOK, res.StatusCode)
+		}()
+
 		return nil
 	}
 
