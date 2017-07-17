@@ -113,7 +113,7 @@ func NewServer(bindAddress string) (srv *CallbackServer, closeSrv func(), err er
 
 // NewReuseServer creates HTTP server with OIDC callback registered on given HTTP mux. Server constructed in such way
 // is not responsible for serving the callback. This is responsibility of the caller.
-func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) (*CallbackServer, error) {
+func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) *CallbackServer {
 	s := &CallbackServer{
 		redirectURL: fmt.Sprintf("http://%s%s", listenAddress, pattern),
 		callbackCh:  make(chan *callbackResponse),
@@ -126,7 +126,7 @@ func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) (*
 		<-quit
 		close(s.callbackCh)
 	}()
-	return s, nil
+	return s
 }
 
 // callbackHandler handles redirect from OIDC provider with either code or error parameters.
