@@ -256,34 +256,6 @@ func (c *Cache) SaveToken(token *oidc.Token) error {
 	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
 }
 
-// ClearIDToken removes ID token from config. It is useful when you want to refresh ID token but token did not yet
-// expire.
-func (c *Cache) ClearIDToken() error {
-	k8sConfig, err := cfg.LoadFromFile(c.kubeConfigPath)
-	if err != nil {
-		return fmt.Errorf("Failed to load k8s config from file %v. Make sure it is there or change"+
-			" permissions. Err: %v", c.kubeConfigPath, err)
-	}
-
-	for name := range c.users {
-		if _, ok := k8sConfig.AuthInfos[name]; !ok {
-			continue
-		}
-
-		if k8sConfig.AuthInfos[name].AuthProvider == nil {
-			continue
-		}
-
-		if k8sConfig.AuthInfos[name].AuthProvider.Config == nil {
-			continue
-		}
-
-		delete(k8sConfig.AuthInfos[name].AuthProvider.Config, "id-token")
-	}
-
-	return cfg.WriteToFile(*k8sConfig, c.kubeConfigPath)
-}
-
 // Config returns OIDC configuration.
 func (c *Cache) Config() login.OIDCConfig {
 	return c.cfg

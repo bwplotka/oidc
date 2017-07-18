@@ -32,13 +32,15 @@ type ReuseTokenSource struct {
 
 // NewReuseTokenSource returns a TokenSource which repeatedly returns the
 // same token as long as it's valid, starting with t.
+// As a second argument it returns reset function that enables to reset h
 // When its cached token is invalid, a new token is obtained from source.
-func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) TokenSource {
-	return &ReuseTokenSource{
+func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+	s := &ReuseTokenSource{
 		ctx: ctx,
 		t:   t,
 		new: src,
 	}
+	return s, s.reset
 }
 
 // OIDCToken returns the current token if it's still valid, else will
@@ -61,6 +63,13 @@ func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
 // Verifier returns verifier from underlying token source.
 func (s *ReuseTokenSource) Verifier() Verifier {
 	return s.new.Verifier()
+}
+
+func (s *ReuseTokenSource) reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.t = nil
 }
 
 // TokenRefresher is a TokenSource that makes "grant_type"=="refresh_token"

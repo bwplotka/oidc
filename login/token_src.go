@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sync"
 	"time"
 
 	"github.com/Bplotka/oidc"
@@ -25,7 +26,6 @@ type Cache interface {
 
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
 // It caches fetched tokens in provided TokenCache e.g on disk or in k8s config.
-// No mutex is implemented, since it is made to be used with oidc.ReuseTokenSource which already guards it.
 type OIDCTokenSource struct {
 	ctx    context.Context
 	logger *log.Logger
@@ -40,15 +40,21 @@ type OIDCTokenSource struct {
 	callbackSrv  *CallbackServer
 	openBrowser  func(string) error
 	genRandToken func() string
+
+	mu sync.Mutex
 }
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (oidc.TokenSource, error) {
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
+	if cache == nil {
+		return nil, nil, errors.New("cache cannot be nil")
+	}
+
 	oidcClient, err := oidc.NewClient(ctx, cache.Config().Provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
+		return nil, nil, fmt.Errorf("failed to initialize OIDC client. Err: %v", err)
 	}
 
 	s := &OIDCTokenSource{
@@ -68,7 +74,31 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 		s.nonce = rand128Bits()
 	}
 
-	return oidc.NewReuseTokenSource(ctx, nil, s), nil
+	reuseTokenSource, reset := oidc.NewReuseTokenSource(ctx, nil, s)
+	// Our clear ID token function needs to reset reuse token to make sense.
+	return reuseTokenSource, s.clearIDToken(reset), nil
+}
+
+func (s *OIDCTokenSource) clearIDToken(resetTS func()) func() error {
+	return func() error {
+		s.mu.Lock()
+		defer func() {
+			resetTS()
+			s.mu.Unlock()
+		}()
+
+		token, err := s.cache.Token()
+		if err != nil {
+
+			return err
+		}
+		if token == nil {
+			return nil
+		}
+
+		token.IDToken = ""
+		return s.cache.SaveToken(token)
+	}
 }
 
 func (s *OIDCTokenSource) getOIDCConfig() oidc.Config {
@@ -95,6 +125,9 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 // OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
 func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	cachedToken, err := s.cache.Token()
 	if err != nil {
 		s.logger.Printf("Warn: Failed to get cached token or token is invalid. Err: %v", err)

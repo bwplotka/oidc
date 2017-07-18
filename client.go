@@ -307,7 +307,8 @@ func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSou
 	if t != nil {
 		tkr.refreshToken = t.RefreshToken
 	}
-	return NewReuseTokenSource(ctx, t, tkr)
+	src, _ := NewReuseTokenSource(ctx, t, tkr)
+	return src
 }
 
 // token fetches token from OIDC token endpoint with provided URL values.
