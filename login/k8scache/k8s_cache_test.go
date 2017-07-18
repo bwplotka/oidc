@@ -181,54 +181,6 @@ func TestK8sCache_SaveToken(t *testing.T) {
 	}
 }
 
-func TestK8sCache_ClearToken(t *testing.T) {
-	loginCfg := login.OIDCConfig{
-		ClientID:     "ID1",
-		ClientSecret: "secret1",
-		Scopes: []string{
-			oidc.ScopeOpenID,
-			oidc.ScopeProfile,
-			oidc.ScopeEmail,
-			"groups",
-			oidc.ScopeOfflineAccess,
-		},
-		Provider: testProvider,
-	}
-
-	cache := NewCache(
-		"",
-		loginCfg,
-		"cluster1-access",
-		"cluster2-access",
-	)
-
-	test := func(inputCfgPath string) {
-		t.Logf("Testing %s", inputCfgPath)
-		cache.kubeConfigPath = "test-data/tmp-" + rand128Bits()
-
-		err := copyFileContents(inputCfgPath, cache.kubeConfigPath)
-		require.NoError(t, err)
-
-		defer os.Remove(cache.kubeConfigPath)
-		err = cache.ClearIDToken()
-		require.NoError(t, err)
-
-		file, err := ioutil.ReadFile(cache.kubeConfigPath)
-		require.NoError(t, err)
-
-		expected, err := ioutil.ReadFile("test-data/expected_config_clear.yaml")
-		require.NoError(t, err)
-
-		assert.Equal(t, string(expected), string(file))
-	}
-
-	for _, inputCfgPath := range []string{
-		"test-data/expected_config.yaml",
-	} {
-		test(inputCfgPath)
-	}
-}
-
 func rand128Bits() string {
 	buff := make([]byte, 16) // 128 bit random ID.
 	if _, err := io.ReadFull(rand.Reader, buff); err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/Bplotka/oidc"
 	"github.com/Bplotka/oidc/testing"
 	"github.com/stretchr/testify/suite"
+	"github.com/stretchr/testify/mock"
 )
 
 const (
@@ -373,4 +374,30 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 
 	s.cache.AssertExpectations(s.T())
 	s.Equal(0, s.provider.Mock().Len())
+}
+
+func (s *TokenSourceTestSuite) Test_ClearIDToken_ClearOnlyIDToken() {
+	token := oidc.Token{
+		AccessToken: "accessToken",
+		IDToken: "idToken",
+		RefreshToken: "refreshToken",
+	}
+	// Just to satisfy mock.
+	s.cache.Config()
+
+	s.cache.On("Token").Return(&token, nil)
+	s.cache.On("SaveToken", mock.Anything).Run(func(a mock.Arguments){
+		t, ok := a.Get(0).(*oidc.Token)
+		s.Require().True(ok)
+
+		s.Assert().Equal(token.AccessToken, t.AccessToken)
+		s.Assert().Empty(t.IDToken)
+		s.Assert().Equal(token.RefreshToken, t.RefreshToken)
+	}).Return(nil)
+
+	resetDone := true
+	clear := s.oidcSource.clearIDToken(func(){resetDone = true})
+	s.Require().NoError(clear())
+
+	s.cache.AssertExpectations(s.T())
 }
