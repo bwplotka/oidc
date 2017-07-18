@@ -73,8 +73,9 @@ type CallbackServer struct {
 	redirectURL string
 	callbackCh  chan *callbackResponse
 
-	// If empty, nothing is expected, so callback should immediately return err.
+	// CallbackReq is written in separate thread so guard that.
 	callbackReqMu sync.Mutex
+	// If empty, nothing is expected, so callback should immediately return err.
 	callbackReq   *callbackRequest
 }
 
@@ -127,8 +128,6 @@ func NewReuseServer(pattern string, listenAddress string, mux *http.ServeMux) *C
 // NOTE: This is not thread-safe in terms of multiple logins in the same time.
 func (s *CallbackServer) callbackHandler(w http.ResponseWriter, r *http.Request) {
 	s.callbackReqMu.Lock()
-	defer s.callbackReqMu.Unlock()
-
 	if s.callbackReq == nil {
 		w.WriteHeader(http.StatusPreconditionFailed)
 		w.Write([]byte("Did not expect OIDC callback"))
@@ -136,6 +135,7 @@ func (s *CallbackServer) callbackHandler(w http.ResponseWriter, r *http.Request)
 	}
 	defer func() {
 		s.callbackReq = nil
+		s.callbackReqMu.Unlock()
 	}()
 
 	err := r.ParseForm()
