@@ -50,7 +50,7 @@ func (a *authorizer) IsAuthorized(ctx context.Context, token string) error {
 	err = idToken.Claims(&permsMap)
 	if err != nil {
 		// Should not happen.
-		return nil
+		return err
 	}
 
 	perms, ok := permsMap[a.config.PermsClaim].([]interface{})

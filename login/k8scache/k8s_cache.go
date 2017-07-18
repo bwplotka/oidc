@@ -109,11 +109,6 @@ func NewCacheFromUser(kubeConfigPath string, k8sUser string) (*Cache, error) {
 	return &Cache{cfg: loginCfg, users: users, kubeConfigPath: kubeConfigPath}, nil
 }
 
-// SetConfigPath sets custom path as config path for kube config.
-func (c *Cache) SetConfigPath(path string) {
-	c.kubeConfigPath = path
-}
-
 func extraScopes(configScopes []string) []string {
 	var extra []string
 	for _, scope := range configScopes {
