@@ -16,12 +16,3 @@
 [submodule "vendor/gopkg.in/square/go-jose.v2"]
 	path = vendor/gopkg.in/square/go-jose.v2
 	url = https://gopkg.in/square/go-jose.v2
-[submodule "vendor/k8s.io/client-go"]
-	path = vendor/k8s.io/client-go
-	url = https://github.com/kubernetes/client-go
-[submodule "vendor/k8s.io/apimachinery"]
-	path = vendor/k8s.io/apimachinery
-	url = https://github.com/kubernetes/apimachinery
-[submodule "vendor/k8s.io/api"]
-	path = vendor/k8s.io/api
-	url = https://github.com/kubernetes/api
