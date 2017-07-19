@@ -22,3 +22,6 @@
 [submodule "vendor/k8s.io/apimachinery"]
 	path = vendor/k8s.io/apimachinery
 	url = https://github.com/kubernetes/apimachinery
+[submodule "vendor/k8s.io/api"]
+	path = vendor/k8s.io/api
+	url = https://github.com/kubernetes/api
