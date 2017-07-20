@@ -77,11 +77,11 @@ func (a *authorizer) IsAuthorized(ctx context.Context, token string) error {
 func IsRequestAuthorized(req *http.Request, a Authorizer, headerName string) error {
 	auth := strings.TrimSpace(req.Header.Get(headerName))
 	if auth == "" {
-		return fmt.Errorf("Unauthenticated. No %q header.", headerName)
+		return fmt.Errorf("Unauthenticated. No %s header.", headerName)
 	}
 	parts := strings.Split(auth, " ")
 	if len(parts) < 2 || strings.ToLower(parts[0]) != "bearer" {
-		return fmt.Errorf("Unauthenticated. %q header does not have Bearer format.", headerName)
+		return fmt.Errorf("Unauthenticated. %s header does not have Bearer format.", headerName)
 	}
 
 	return a.IsAuthorized(req.Context(), parts[1])

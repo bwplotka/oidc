@@ -16,3 +16,6 @@
 [submodule "vendor/gopkg.in/square/go-jose.v2"]
 	path = vendor/gopkg.in/square/go-jose.v2
 	url = https://gopkg.in/square/go-jose.v2
+[submodule "vendor/gopkg.in/yaml.v2"]
+	path = vendor/gopkg.in/yaml.v2
+	url = https://gopkg.in/yaml.v2
