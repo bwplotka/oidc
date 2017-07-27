@@ -74,7 +74,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 		s.nonce = rand128Bits()
 	}
 
-	reuseTokenSource, reset := oidc.NewReuseTokenSource(ctx, nil, s)
+	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(ctx, logger, nil, s)
 	// Our clear ID token function needs to reset reuse token to make sense.
 	return reuseTokenSource, s.clearIDToken(reset), nil
 }
@@ -132,11 +132,12 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	if err != nil {
 		s.logger.Printf("Warn: Failed to get cached token or token is invalid. Err: %v", err)
 	} else if cachedToken != nil {
-		if cachedToken.Valid(s.ctx, s.Verifier()) {
+		err = cachedToken.IsValid(s.ctx, s.Verifier())
+		if err == nil {
 			// Successfully retrieved a non-expired cached token and only if we have ID token as well.
 			return cachedToken, nil
 		}
-
+		s.logger.Printf("Warn: Cached token is not valid. Cause: %v\n", err)
 		if cachedToken.RefreshToken != "" {
 			// Only if we have refresh token, we can refresh NewIDToken.
 			oidcToken, err := s.refreshToken(cachedToken.RefreshToken)

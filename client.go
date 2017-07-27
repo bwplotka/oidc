@@ -210,7 +210,7 @@ func (c *Client) Verifier(cfg VerificationConfig) *IDTokenVerifier {
 }
 
 // Revoke revokes provided token. It can be access token or refresh token. In most, revoking access token will
-// revoke refresh token which can be convenient. (Valid e.g for Google OIDC).
+// revoke refresh token which can be convenient. (IsValid e.g for Google OIDC).
 func (c *Client) Revoke(ctx context.Context, cfg Config, token string) error {
 	v := url.Values{}
 	v.Set("token", token)
