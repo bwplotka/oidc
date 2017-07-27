@@ -13,6 +13,7 @@ users:
   user:
     auth-provider:
       config:
+        access-token: new-token
         client-id: ID1
         client-secret: secret1
         extra-scopes: groups
@@ -24,6 +25,7 @@ users:
   user:
     auth-provider:
       config:
+        access-token: new-token
         client-id: ID1
         client-secret: secret1
         extra-scopes: groups

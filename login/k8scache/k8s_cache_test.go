@@ -151,6 +151,7 @@ func TestK8sCache_SaveToken(t *testing.T) {
 
 		defer os.Remove(cache.kubeConfigPath)
 		token := &oidc.Token{
+			AccessToken:  "new-token",
 			RefreshToken: "new-refresh-token",
 			IDToken:      "new-id-token",
 		}

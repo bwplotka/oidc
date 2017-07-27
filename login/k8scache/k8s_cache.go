@@ -19,6 +19,8 @@ const (
 	ExtraScopes              = "extra-scopes"
 	IDToken                  = "id-token"
 	RefreshToken             = "refresh-token"
+
+	AccessToken = "access-token"
 )
 
 var DefaultKubeConfigPath = cfg.RecommendedHomeFile
@@ -181,6 +183,20 @@ func (c *Cache) Token() (*oidc.Token, error) {
 			return nil, fmt.Errorf("Wrong Issuer Identity Provider for user %s", name)
 		}
 
+		if token.IDToken == "" {
+			token.IDToken = authConfig[IDToken]
+		} else if token.IDToken != authConfig[IDToken] {
+			// TODO(bplotka): Allow that?
+			return nil, fmt.Errorf("Different IDTokens among users, found on user %s", name)
+		}
+
+		if token.AccessToken == "" {
+			token.AccessToken = authConfig[AccessToken]
+		} else if token.AccessToken != authConfig[AccessToken] {
+			// TODO(bplotka): Allow that?
+			return nil, fmt.Errorf("Different AccessTokens among users, found on user %s", name)
+		}
+
 		if token.RefreshToken == "" {
 			token.RefreshToken = authConfig[RefreshToken]
 		} else if token.RefreshToken != authConfig[RefreshToken] {
@@ -241,6 +257,7 @@ func (c *Cache) SaveToken(token *oidc.Token) error {
 					ExtraScopes:  strings.Join(extraScopes(c.cfg.Scopes), ","),
 					RefreshToken: token.RefreshToken,
 					IDToken:      token.IDToken,
+					AccessToken:  token.AccessToken,
 				},
 			},
 		}
