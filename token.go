@@ -68,15 +68,22 @@ func (t *Token) IsAccessTokenExpired() bool {
 	return t.AccessTokenExpiry.Add(-expiryDelta).Before(time.Now())
 }
 
-// Valid validates oidc token by validating AccessToken and ID Token.
-// NOTE: If you required more detailed information of what is wrong, you need to verify ID token on your own.
-func (t *Token) Valid(ctx context.Context, verifier Verifier) bool {
+// IsValid validates oidc token by validating AccessToken and ID Token.
+// If error is nil, the token is valid.
+func (t *Token) IsValid(ctx context.Context, verifier Verifier) error {
 	_, err := verifier.Verify(ctx, t.IDToken)
 	if err != nil {
-		return false
+		return fmt.Errorf("token: IDToken is not valid. Err: %v", err)
 	}
 
-	return t.AccessToken != "" && !t.IsAccessTokenExpired()
+	if t.AccessToken == "" {
+		return errors.New("token: No AccessToken.")
+	}
+
+	if t.IsAccessTokenExpired() {
+		return errors.New("token: AccessToken expired.")
+	}
+	return nil
 }
 
 // NewIDToken is an OpenID Connect extension that provides a predictable representation

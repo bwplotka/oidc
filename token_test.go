@@ -73,12 +73,12 @@ func (s *ClientTestSuite) TestToken_Valid() {
 	}
 
 	s.s.Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
-	ok := token.Valid(
+	err := token.IsValid(
 		s.testCtx,
 		s.client.Verifier(VerificationConfig{
 			ClientID: "client1",
 		}))
-	s.True(ok)
+	s.NoError(err)
 
 	s.Equal(0, s.s.Len())
 }

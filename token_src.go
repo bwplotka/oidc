@@ -3,6 +3,8 @@ package oidc
 import (
 	"context"
 	"errors"
+	"io/ioutil"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -28,6 +30,9 @@ type ReuseTokenSource struct {
 	new TokenSource // called when t is expired.
 	mu  sync.Mutex  // guards t
 	t   *Token
+
+	// Optional std logger for debug log. The only case which will be logged is why OIDC token was invalid.
+	debugLogger *log.Logger
 }
 
 // NewReuseTokenSource returns a TokenSource which repeatedly returns the
@@ -36,9 +41,21 @@ type ReuseTokenSource struct {
 // When its cached token is invalid, a new token is obtained from source.
 func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
-		ctx: ctx,
-		t:   t,
-		new: src,
+		ctx:         ctx,
+		t:           t,
+		new:         src,
+		debugLogger: log.New(ioutil.Discard, "", 0),
+	}
+	return s, s.reset
+}
+
+// NewReuseTokenSourceWithDebugLogger is the same as NewReuseTokenSource but with logger.
+func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+	s := &ReuseTokenSource{
+		ctx:         ctx,
+		t:           t,
+		new:         src,
+		debugLogger: debugLogger,
 	}
 	return s, s.reset
 }
@@ -49,8 +66,14 @@ func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret To
 func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.t != nil && s.t.Valid(s.ctx, s.Verifier()) {
-		return s.t, nil
+	if s.t != nil {
+		err := s.t.IsValid(s.ctx, s.Verifier())
+		if err == nil {
+			return s.t, nil
+		}
+		s.debugLogger.Printf("reuseTokenSource: Token not valid. Obtaining new one. Cause: %v\n", err)
+	} else {
+		s.debugLogger.Println("reuseTokenSource: No token to reuse. Obtaining new one")
 	}
 	t, err := s.new.OIDCToken()
 	if err != nil {
