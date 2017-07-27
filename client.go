@@ -43,7 +43,11 @@ var HTTPClientCtxKey struct{}
 //     context.WithValue(ctx, oidc.HTTPClientCtxKey, client)
 //
 func doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
-	client := http.DefaultClient
+	// Clone transport before. We don't want to depend on default one.
+	clonedTransport := &(*http.DefaultTransport.(*http.Transport))
+	client := &http.Client{
+		Transport: clonedTransport,
+	}
 	if c, ok := ctx.Value(HTTPClientCtxKey).(*http.Client); ok {
 		client = c
 	}
