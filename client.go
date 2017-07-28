@@ -44,7 +44,7 @@ var HTTPClientCtxKey struct{}
 //     context.WithValue(ctx, oidc.HTTPClientCtxKey, client)
 //
 func doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
-	// Create new transport before using it with exactly the same params as default one. Don't used it directly, because
+	// Create new transport before using it with exactly the same params as default one. Don't use it directly, because
 	// we don't want to depend on the default one.
 	newTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
