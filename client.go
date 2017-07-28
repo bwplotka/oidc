@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -38,15 +39,27 @@ const (
 // Used to pass special HTTP client (e.g with non-default timeout) or for tests.
 var HTTPClientCtxKey struct{}
 
-// doRequest performs HTTP request using Default client or client given by context like this:
+// doRequest performs HTTP request using our default client or client given by context like this:
 //
 //     context.WithValue(ctx, oidc.HTTPClientCtxKey, client)
 //
 func doRequest(ctx context.Context, req *http.Request) (*http.Response, error) {
-	// Clone transport before using it. We don't want to depend on the default one.
-	clonedTransport := *http.DefaultTransport.(*http.Transport)
+	// Create new transport before using it with exactly the same params as default one. Don't used it directly, because
+	// we don't want to depend on the default one.
+	newTransport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
 	client := &http.Client{
-		Transport: &clonedTransport,
+		Transport: newTransport,
 	}
 	if c, ok := ctx.Value(HTTPClientCtxKey).(*http.Client); ok {
 		client = c
