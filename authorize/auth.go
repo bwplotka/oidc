@@ -59,19 +59,21 @@ func (a *authorizer) IsAuthorized(ctx context.Context, token string) error {
 			a.config.PermsClaim, reflect.TypeOf(permsMap[a.config.PermsClaim]))
 	}
 
+	var permissions []string
 	for _, permission := range perms {
 		permissionStr, ok := permission.(string)
 		if !ok {
 			return fmt.Errorf("Wrong type of permission inside %q claim. Expected string. Got: %v",
 				a.config.PermsClaim, reflect.TypeOf(permission))
 		}
-
-		if permissionStr == a.config.RequiredPerms {
-			return nil
-		}
+		permissions = append(permissions, permissionStr)
 	}
 
-	return fmt.Errorf("Unauthorized. User %q is missing required permission %q", idToken.Subject, a.config.RequiredPerms)
+	if isAuthorized := a.config.PermCondition(permissions); isAuthorized {
+		return nil
+	}
+
+	return fmt.Errorf("Unauthorized. User %q is missing required permissions", idToken.Subject)
 }
 
 func IsRequestAuthorized(req *http.Request, a Authorizer, headerName string) error {

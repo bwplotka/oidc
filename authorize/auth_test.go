@@ -16,7 +16,7 @@ func TestIsAuthorized(t *testing.T) {
 	testConfig := authorize.Config{
 		Provider:      p.IssuerURL,
 		ClientID:      "clientID",
-		RequiredPerms: "secret-permission",
+		PermCondition: authorize.Contains("secret-permission"),
 		PermsClaim:    "perms",
 	}
 	a, err := authorize.New(p.Context(), testConfig)
