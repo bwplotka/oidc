@@ -88,11 +88,9 @@ func (s *OIDCTokenSource) clearIDToken(resetTS func()) func() error {
 		}()
 
 		token, err := s.cache.Token()
-		if err != nil {
-
-			return err
-		}
-		if token == nil {
+		if err != nil || token == nil {
+			// Nothing to clear.
+			// TODO(Bplotka): This is not true if we cannot get cache file at all. Fix that.
 			return nil
 		}
 
