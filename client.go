@@ -14,8 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	jose "gopkg.in/square/go-jose.v2"
 )
 
 const (
@@ -83,14 +81,9 @@ type Client struct {
 	rawDiscoveryClaims []byte
 	discovery          DiscoveryJSON
 
-	remoteKeySet *remoteKeySet
+	keySet keySet
 
 	cfg Config
-}
-
-type cachedKeys struct {
-	keys   []jose.JSONWebKey
-	expiry time.Time
 }
 
 // DiscoveryJSON is structure expected by Discovery endpoint.
@@ -133,7 +126,7 @@ func NewClient(ctx context.Context, issuer string) (*Client, error) {
 		issuer:             p.Issuer,
 		discovery:          p,
 		rawDiscoveryClaims: body,
-		remoteKeySet:       newRemoteKeySet(ctx, p.JWKSURL, time.Now),
+		keySet:             newCachedKeySet(newRemoteKeySet(p.JWKSURL), DefaultKeySetExpiration, time.Now),
 	}, nil
 }
 
@@ -223,7 +216,7 @@ func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSource) (*UserIn
 // The returned IDTokenVerifier is tied to the Client's context and its behavior is
 // undefined once the Client's context is canceled.
 func (c *Client) Verifier(cfg VerificationConfig) *IDTokenVerifier {
-	return newVerifier(c.remoteKeySet, cfg, c.issuer)
+	return newVerifier(c.keySet, cfg, c.issuer)
 }
 
 // Revoke revokes provided token. It can be access token or refresh token. In most, revoking access token will
@@ -428,7 +421,7 @@ func (r *brokenTokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
-// expirationTime represents Oauth2 valid expires_in field in seconds.
+// expirationDur represents Oauth2 valid expires_in field in seconds.
 type expirationTime int32
 
 // MarshalJSON unmarshals expiration time from JSON.

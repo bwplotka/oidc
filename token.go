@@ -10,10 +10,10 @@ import (
 	"time"
 )
 
-// expiryDelta determines how earlier a token should be considered
+// tokenExpiryDelta determines how earlier a token should be considered
 // expired than its actual expiration time. It is used to avoid late
 // expirations due to client-server time mismatches.
-const expiryDelta = 10 * time.Second
+const tokenExpiryDelta = 10 * time.Second
 
 // Token is an Open ID Connect token's response described here:
 // http://openid.net/specs/openid-connect-core-1_0.html#TokenResponse. Token is always Bearer type.
@@ -65,7 +65,7 @@ func (t *Token) IsAccessTokenExpired() bool {
 	if t.AccessTokenExpiry.IsZero() {
 		return false
 	}
-	return t.AccessTokenExpiry.Add(-expiryDelta).Before(time.Now())
+	return t.AccessTokenExpiry.Add(-tokenExpiryDelta).Before(time.Now())
 }
 
 // IsValid validates oidc token by validating AccessToken and ID Token.

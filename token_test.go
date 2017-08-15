@@ -64,7 +64,6 @@ func (s *ClientTestSuite) TestToken_ClaimsWithVerify() {
 
 func (s *ClientTestSuite) TestToken_Valid() {
 	idToken, jwkSetJSON := s.validIDToken()
-
 	token := Token{
 		AccessToken:       "access1",
 		RefreshToken:      "refresh1",

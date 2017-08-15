@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Bplotka/oidc/xerrors"
 	jose "gopkg.in/square/go-jose.v2"
 )
 
@@ -30,7 +31,7 @@ type Verifier interface {
 
 // IDTokenVerifier provides verification for ID Tokens.
 type IDTokenVerifier struct {
-	keySet *remoteKeySet
+	keySet keySet
 	cfg    VerificationConfig
 	issuer string
 }
@@ -56,7 +57,7 @@ type VerificationConfig struct {
 	Now func() time.Time
 }
 
-func newVerifier(keySet *remoteKeySet, cfg VerificationConfig, issuer string) *IDTokenVerifier {
+func newVerifier(keySet keySet, cfg VerificationConfig, issuer string) *IDTokenVerifier {
 	// If SupportedSigningAlgs is empty defaults to only support RS256.
 	if len(cfg.SupportedSigningAlgs) == 0 {
 		cfg.SupportedSigningAlgs = []string{string(jose.RS256)}
@@ -95,18 +96,12 @@ func contains(sli []string, ele string) bool {
 //
 // See: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
 //
-//    oauth2Token, err := client.Exchange(ctx, r.URL.Query().Get("code"))
+//    oidcToken, err := client.Exchange(ctx, r.URL.Query().Get("code"))
 //    if err != nil {
 //        // handle error
 //    }
 //
-//    // Extract the ID Token from oauth2 token.
-//    rawIDToken, ok := oauth2Token.Extra("id_token").(string)
-//    if !ok {
-//        // handle error
-//    }
-//
-//    token, err := verifier.Verify(ctx, rawIDToken)
+//    token, err := verifier.Verify(ctx, oidcToken.IDToken)
 //
 func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDToken, error) {
 	jws, err := jose.ParseSigned(rawIDToken)
@@ -157,37 +152,51 @@ func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDTok
 		return nil, fmt.Errorf("oidc: token is expired (Token Expiry: %v)", token.Expiry)
 	}
 
-	// If a set of required algorithms has been provided, ensure that the signatures use those.
-	var keyIDs, gotAlgs []string
+	// If a set of required algorithms/keys has been provided, ensure that the signature verify will use those.
+	keyIDs := make(map[string]struct{})
+	var gotAlgsForErrLog []string
 	for _, sig := range jws.Signatures {
 		if len(v.cfg.SupportedSigningAlgs) == 0 || contains(v.cfg.SupportedSigningAlgs, sig.Header.Algorithm) {
-			keyIDs = append(keyIDs, sig.Header.KeyID)
+			keyIDs[sig.Header.KeyID] = struct{}{}
 		} else {
-			gotAlgs = append(gotAlgs, sig.Header.Algorithm)
+			gotAlgsForErrLog = append(gotAlgsForErrLog, sig.Header.Algorithm)
 		}
 	}
 	if len(keyIDs) == 0 {
-		return nil, fmt.Errorf("oidc: no signatures use a supported algorithm, expected %q got %q", v.cfg.SupportedSigningAlgs, gotAlgs)
+		return nil, fmt.Errorf("oidc: no signatures use a supported algorithm, expected %q got %q", v.cfg.SupportedSigningAlgs, gotAlgsForErrLog)
 	}
 
 	// Get keys from the remote key set. This will always trigger a re-sync.
-	keys, err := v.keySet.keysWithID(ctx, keyIDs)
+	allKeys, err := v.keySet.Keys(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: get keys for id token: %v", err)
 	}
+
+	var keys []jose.JSONWebKey
+	for _, k := range allKeys {
+		if _, ok := keyIDs[k.KeyID]; !ok {
+			continue
+		}
+		keys = append(keys, k)
+	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("oidc: no keys match signature ID(s) %q", keyIDs)
+		return nil, fmt.Errorf("oidc: no keys match signature ID(s) %v. Got keys: %v", keyIDs, allKeys)
 	}
 
 	// Try to use a key to validate the signature.
 	var gotPayload []byte
+	xerr := xerrors.New()
 	for _, key := range keys {
-		if p, err := jws.Verify(&key); err == nil {
-			gotPayload = p
+		p, err := jws.Verify(&key)
+		if err != nil {
+			xerr.Add(err)
+			continue
 		}
+		gotPayload = p
+		break
 	}
 	if len(gotPayload) == 0 {
-		return nil, fmt.Errorf("oidc: failed to verify id token")
+		return nil, fmt.Errorf("oidc: failed to verify id token. Err: %v", xerr.ErrorOrNil())
 	}
 
 	// Ensure that the payload returned by the square actually matches the payload parsed earlier.

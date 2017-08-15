@@ -41,8 +41,16 @@ func (s *ClientTestSuite) SetupSuite() {
 		Push(rt.JSONResponseFunc(http.StatusOK, jsonDiscovery))
 	s.testCtx = context.WithValue(context.TODO(), HTTPClientCtxKey, s.s.HTTPClient())
 
+	// For test purposes we don't want public keys cache.
+
+	oldKeySetExpiration := DefaultKeySetExpiration
+	DefaultKeySetExpiration = 0 * time.Second
+	defer func() {
+		DefaultKeySetExpiration = oldKeySetExpiration
+	}()
 	s.client, err = NewClient(context.WithValue(context.TODO(), HTTPClientCtxKey, s.s.HTTPClient()), exampleIssuer)
 	s.NoError(err)
+
 }
 
 func (s *ClientTestSuite) SetupTest() {

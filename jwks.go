@@ -15,17 +15,57 @@ import (
 	"gopkg.in/square/go-jose.v2"
 )
 
-func newRemoteKeySet(ctx context.Context, jwksURL string, now func() time.Time) *remoteKeySet {
+type keySet interface {
+	Keys(ctx context.Context) ([]jose.JSONWebKey, error)
+}
+
+// DefaultKeySetExpiration specifies the time after which keys are expired and we need to refetch them.
+var DefaultKeySetExpiration = 30 * time.Second
+
+type cachedKeySet struct {
+	sync.Mutex
+
+	parent        keySet
+	expirationDur time.Duration
+	timeNow       func() time.Time
+
+	keys   []jose.JSONWebKey
+	expiry time.Time
+}
+
+func newCachedKeySet(parent keySet, expirationTime time.Duration, now func() time.Time) keySet {
 	if now == nil {
 		now = time.Now
 	}
-	return &remoteKeySet{jwksURL: jwksURL, ctx: ctx, timeNow: now}
+	return &cachedKeySet{parent: parent, expirationDur: expirationTime, timeNow: now}
+}
+
+// Keys returns public Keys from cache or from parent keySet if expired.
+func (r *cachedKeySet) Keys(ctx context.Context) ([]jose.JSONWebKey, error) {
+	r.Lock()
+	defer r.Unlock()
+
+	if r.timeNow().After(r.expiry) {
+		// Keys expired.
+		keys, err := r.parent.Keys(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		r.keys = keys
+		r.expiry = r.timeNow().Add(r.expirationDur)
+	}
+
+	return r.keys, nil
+
+}
+
+func newRemoteKeySet(jwksURL string) keySet {
+	return &remoteKeySet{jwksURL: jwksURL}
 }
 
 type remoteKeySet struct {
 	jwksURL string
-	ctx     context.Context
-	timeNow func() time.Time
 
 	// guard all other fields
 	mutex sync.Mutex
@@ -37,7 +77,7 @@ type remoteKeySet struct {
 	// If nil, there is no inflight getKeys request.
 	inflightCtx *inflight
 
-	keys []jose.JSONWebKey
+	keys   []jose.JSONWebKey
 }
 
 // inflight is used to wait on some in-flight request from multiple goroutines
@@ -63,7 +103,8 @@ func (i *inflight) Cancel(err error) {
 	close(i.done)
 }
 
-func (r *remoteKeySet) keysWithID(ctx context.Context, keyIDs []string) ([]jose.JSONWebKey, error) {
+// Keys returns public Keys from remote source.
+func (r *remoteKeySet) Keys(ctx context.Context) ([]jose.JSONWebKey, error) {
 	var inflightCtx *inflight
 	func() {
 		r.mutex.Lock()
@@ -75,7 +116,7 @@ func (r *remoteKeySet) keysWithID(ctx context.Context, keyIDs []string) ([]jose.
 			r.inflightCtx = inflightCtx
 
 			go func() {
-				inflightCtx.Cancel(r.updateKeys(r.ctx))
+				inflightCtx.Cancel(r.updateKeys(ctx))
 
 				r.mutex.Lock()
 				defer r.mutex.Unlock()
