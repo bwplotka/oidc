@@ -73,6 +73,11 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 
 	s.closeSrv = closeSrv
 
+	oldKeySetExpiration := oidc.DefaultKeySetExpiration
+	oidc.DefaultKeySetExpiration = 0 * time.Second
+	defer func() {
+		oidc.DefaultKeySetExpiration = oldKeySetExpiration
+	}()
 	oidcClient, err := oidc.NewClient(s.provider.Context(), s.testOIDCCfg.Provider)
 	s.Require().NoError(err)
 
