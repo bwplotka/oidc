@@ -6,9 +6,17 @@ import (
 	"github.com/Bplotka/oidc/authorize"
 	"github.com/Bplotka/oidc/testing"
 	"github.com/stretchr/testify/require"
+	"time"
+	"github.com/Bplotka/oidc"
 )
 
 func TestIsAuthorized(t *testing.T) {
+	oldKeySetExpiration := oidc.DefaultKeySetExpiration
+	oidc.DefaultKeySetExpiration = 0 * time.Second
+	defer func() {
+		oidc.DefaultKeySetExpiration = oldKeySetExpiration
+	}()
+
 	p := &oidc_testing.Provider{}
 	p.Setup(t)
 	p.MockDiscoveryCall()
