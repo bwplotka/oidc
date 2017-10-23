@@ -25,6 +25,8 @@ const (
 
 	GrantTypeAuthCode     = "authorization_code"
 	GrantTypeRefreshToken = "refresh_token"
+	// GrantTypeServiceAccount is a custom ServiceAccount to support exchanging SA for ID token.
+	GrantTypeServiceAccount = "service_account"
 
 	ResponseTypeCode    = "code"     // Authorization Code flow
 	ResponseTypeToken   = "token"    // Implicit flow for frontend apps.
@@ -294,6 +296,24 @@ func (c *Client) Exchange(ctx context.Context, cfg Config, code string, extra ..
 		"grant_type":   {GrantTypeAuthCode},
 		"code":         {code},
 		"redirect_uri": {cfg.RedirectURL},
+	}
+
+	for _, e := range extra {
+		for key := range e {
+			v.Set(key, e.Get(key))
+		}
+	}
+
+	return c.token(ctx, cfg.ClientID, cfg.ClientSecret, v)
+}
+
+// Exchange converts an google service account JSON into a token.
+// This is custom Corp Auth additional grant and is not in standard OpenID Connect flow.
+func (c *Client) ExchangeServiceAccount(ctx context.Context, cfg Config, googleServiceAccountJSON string, extra ...url.Values) (*Token, error) {
+	v := url.Values{
+		"grant_type":      {GrantTypeServiceAccount},
+		"service_account": {googleServiceAccountJSON},
+		"redirect_uri":    {cfg.RedirectURL},
 	}
 
 	for _, e := range extra {

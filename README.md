@@ -59,4 +59,8 @@ Vendoring using submodules. See [.gitmodules](.gitmodules)
 ## Wishlist:
 
 * [x] Support 0 port (not pin into exact port)
-* [ ] Consider moving to structure logger with levels e.g logrus or just drop logging. (I don't like passing std logger in constructor)   
+* [ ] Consider moving to structure logger with levels e.g logrus or just drop logging. (I don't like passing std logger in constructor)
+   
+## Copyright 
+Copyright 2017 Bartłomiej Płotka. All Rights Reserved.
+See LICENSE for licensing terms.
