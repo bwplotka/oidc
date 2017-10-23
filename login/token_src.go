@@ -126,7 +126,7 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 	return oidcConfig
 }
 
-// OIDCToken is used to obtain new OIDC Token (which include e.g access token, refresh token and id token). It does that by
+// OIDCToken is used to obtain new OIDC Token (which includes e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
 func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	s.mu.Lock()
