@@ -441,7 +441,7 @@ func (r *brokenTokenResponse) expiry() time.Time {
 	return time.Time{}
 }
 
-// expirationDur represents Oauth2 valid expires_in field in seconds.
+// expirationTime represents Oauth2 valid expires_in field in seconds.
 type expirationTime int32
 
 // MarshalJSON unmarshals expiration time from JSON.

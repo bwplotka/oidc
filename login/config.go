@@ -8,7 +8,7 @@ import (
 
 // Config is a login configuration. It does not contain oidc configuration.
 type Config struct {
-	NonceCheck  bool   `json:"include_nonce"`
+	NonceCheck bool `json:"include_nonce"`
 }
 
 // ConfigFromYaml parses config from yaml file.

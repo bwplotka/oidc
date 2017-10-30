@@ -13,7 +13,10 @@ import (
 	"golang.org/x/net/context"
 )
 
-const exampleIssuer = "https://issuer.org"
+const (
+	exampleIssuer = "https://issuer.org"
+	zeroTime = 0 * time.Second
+)
 
 var testDiscovery = DiscoveryJSON{
 	Issuer:        exampleIssuer,
@@ -44,13 +47,12 @@ func (s *ClientTestSuite) SetupSuite() {
 	// For test purposes we don't want public keys cache.
 
 	oldKeySetExpiration := DefaultKeySetExpiration
-	DefaultKeySetExpiration = 0 * time.Second
+	DefaultKeySetExpiration = zeroTime
 	defer func() {
 		DefaultKeySetExpiration = oldKeySetExpiration
 	}()
 	s.client, err = NewClient(context.WithValue(context.TODO(), HTTPClientCtxKey, s.s.HTTPClient()), exampleIssuer)
 	s.NoError(err)
-
 }
 
 func (s *ClientTestSuite) SetupTest() {
