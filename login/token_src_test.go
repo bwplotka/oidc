@@ -16,8 +16,8 @@ import (
 	"github.com/Bplotka/go-httpt/rt"
 	"github.com/Bplotka/oidc"
 	"github.com/Bplotka/oidc/testing"
-	"github.com/stretchr/testify/suite"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
 )
 
 const (
@@ -383,15 +383,15 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 
 func (s *TokenSourceTestSuite) Test_ClearIDToken_ClearOnlyIDToken() {
 	token := oidc.Token{
-		AccessToken: "accessToken",
-		IDToken: "idToken",
+		AccessToken:  "accessToken",
+		IDToken:      "idToken",
 		RefreshToken: "refreshToken",
 	}
 	// Just to satisfy mock.
 	s.cache.Config()
 
 	s.cache.On("Token").Return(&token, nil)
-	s.cache.On("SaveToken", mock.Anything).Run(func(a mock.Arguments){
+	s.cache.On("SaveToken", mock.Anything).Run(func(a mock.Arguments) {
 		t, ok := a.Get(0).(*oidc.Token)
 		s.Require().True(ok)
 
@@ -401,7 +401,7 @@ func (s *TokenSourceTestSuite) Test_ClearIDToken_ClearOnlyIDToken() {
 	}).Return(nil)
 
 	resetDone := true
-	clear := s.oidcSource.clearIDToken(func(){resetDone = true})
+	clear := s.oidcSource.clearIDToken(func() { resetDone = true })
 	s.Require().NoError(clear())
 
 	s.cache.AssertExpectations(s.T())

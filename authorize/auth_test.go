@@ -2,12 +2,12 @@ package authorize_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/Bplotka/oidc"
 	"github.com/Bplotka/oidc/authorize"
 	"github.com/Bplotka/oidc/testing"
 	"github.com/stretchr/testify/require"
-	"time"
-	"github.com/Bplotka/oidc"
 )
 
 func TestIsAuthorized(t *testing.T) {

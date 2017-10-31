@@ -3,13 +3,17 @@ package gsa
 import (
 	"context"
 	"log"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/Bplotka/oidc"
 	"github.com/pkg/errors"
-	"net/url"
-	"strings"
+)
+
+const (
+	exchangeServiceAccountTimeout = 10 * time.Second
 )
 
 type OIDCConfig struct {
@@ -90,7 +94,7 @@ func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 	s.logger.Print("Debug: Exchanging SA JWT for IDToken")
 
-	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.TODO(), exchangeServiceAccountTimeout)
 	defer cancel()
 
 	var extra []url.Values

@@ -77,7 +77,7 @@ type remoteKeySet struct {
 	// If nil, there is no inflight getKeys request.
 	inflightCtx *inflight
 
-	keys   []jose.JSONWebKey
+	keys []jose.JSONWebKey
 }
 
 // inflight is used to wait on some in-flight request from multiple goroutines

@@ -76,7 +76,7 @@ type CallbackServer struct {
 	// CallbackReq is written in separate thread so guard that.
 	callbackReqMu sync.Mutex
 	// If empty, nothing is expected, so callback should immediately return err.
-	callbackReq   *callbackRequest
+	callbackReq *callbackRequest
 }
 
 // NewServer creates HTTP server with OIDC callback on the bindAddress an argument. BindAddress is the ultimately a redirectURL that all clients MUST register

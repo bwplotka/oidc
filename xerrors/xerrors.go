@@ -1,20 +1,27 @@
 package xerrors
 
+/*
+ "xerrors" package allows to have combo error logic. If passed errors were actually nils, it will return no error as well
+ for "ErrorOrNil" method.
+*/
+
 import (
 	"errors"
 	"sync"
 )
 
-type x struct {
+type combo struct {
 	errsMu sync.Mutex
 	errs   []error
 }
 
-func New() *x {
-	return &x{}
+// New constructs new combo struct.
+func New() *combo {
+	return &combo{}
 }
 
-func (e *x) Add(err error) {
+// Add adds error to combo only if it is non-nil.
+func (e *combo) Add(err error) {
 	if err == nil {
 		return
 	}
@@ -24,7 +31,8 @@ func (e *x) Add(err error) {
 	e.errs = append(e.errs, err)
 }
 
-func (e *x) ErrorOrNil() error {
+// ErrorOrNil returns error or nil if there was nothing added (or nil were added).
+func (e *combo) ErrorOrNil() error {
 	e.errsMu.Lock()
 	defer e.errsMu.Unlock()
 	if len(e.errs) == 0 {
