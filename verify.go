@@ -149,7 +149,7 @@ func (v *IDTokenVerifier) Verify(ctx context.Context, rawIDToken string) (*IDTok
 	}
 
 	if token.Expiry.Time().Before(now()) {
-		return nil, fmt.Errorf("oidc: token is expired (Token Expiry: %v)", token.Expiry)
+		return nil, fmt.Errorf("oidc: token is expired (Token Expiry: %v)", token.Expiry.Time())
 	}
 
 	// If a set of required algorithms/keys has been provided, ensure that the signature verify will use those.

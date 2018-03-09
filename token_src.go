@@ -14,10 +14,14 @@ import (
 
 // TokenSource is anything that can return an oidc token and verifier for token verification.
 type TokenSource interface {
-	// OIDCToken must be safe for concurrent use by multiple goroutines.
+	// OIDCTokenCtx must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
-	OIDCToken() (*Token, error)
+	OIDCTokenCtx(context.Context) (*Token, error)
 	Verifier() Verifier
+
+	// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
+	// Deprecated: use OIDCTokenCtx method instead.
+	OIDCToken() (*Token, error)
 }
 
 // ReuseTokenSource is a oidc TokenSource that holds a single token in memory
@@ -60,14 +64,20 @@ func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Lo
 	return s, s.reset
 }
 
-// OIDCToken returns the current token if it's still valid, else will
+// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
+// Deprecated: use OIDCTokenCtx method instead.
+func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
+	return s.OIDCTokenCtx(s.ctx)
+}
+
+// OIDCTokenCtx returns the current token if it's still valid, else will
 // refresh the current token (using r.Context for HTTP client
 // information) and return the new one.
-func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
+func (s *ReuseTokenSource) OIDCTokenCtx(ctx context.Context) (*Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.t != nil {
-		err := s.t.IsValid(s.ctx, s.Verifier())
+		err := s.t.IsValid(ctx, s.Verifier())
 		if err == nil {
 			return s.t, nil
 		}
@@ -116,12 +126,18 @@ func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshT
 	}
 }
 
-// OIDCToken is not safe for concurrent access, as it
+// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
+// Deprecated: use OIDCTokenCtx method instead.
+func (tf *TokenRefresher) OIDCToken() (*Token, error) {
+	return tf.OIDCTokenCtx(tf.ctx)
+}
+
+// OIDCTokenCtx is not safe for concurrent access, as it
 // updates the tokenRefresher's refreshToken field.
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
 // NOTE: Returned token is not verified.
-func (tf *TokenRefresher) OIDCToken() (*Token, error) {
+func (tf *TokenRefresher) OIDCTokenCtx(ctx context.Context) (*Token, error) {
 	if tf.refreshToken == "" {
 		return nil, errors.New("oauth2: token expired and refresh token is not set")
 	}
@@ -135,7 +151,7 @@ func (tf *TokenRefresher) OIDCToken() (*Token, error) {
 		v.Set("scope", strings.Join(tf.cfg.Scopes, " "))
 	}
 
-	tk, err := tf.client.token(tf.ctx, tf.cfg.ClientID, tf.cfg.ClientSecret, v)
+	tk, err := tf.client.token(ctx, tf.cfg.ClientID, tf.cfg.ClientSecret, v)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +182,11 @@ type staticTokenSource struct {
 
 // OIDCToken returns saved pointer to token.
 func (s staticTokenSource) OIDCToken() (*Token, error) {
+	return s.OIDCTokenCtx(nil)
+}
+
+// OIDCTokenCtx returns saved pointer to token.
+func (s staticTokenSource) OIDCTokenCtx(_ context.Context) (*Token, error) {
 	return s.t, nil
 }
 
