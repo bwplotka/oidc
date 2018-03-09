@@ -47,7 +47,8 @@ type OIDCTokenSource struct {
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
+// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src *oidc.ReuseTokenSource, clearIDToken func() error, err error) {
 	if cache == nil {
 		return nil, nil, errors.New("cache cannot be nil")
 	}
@@ -185,7 +186,7 @@ func (s *OIDCTokenSource) refreshToken(ctx context.Context, refreshToken string)
 		s.oidcClient,
 		s.getOIDCConfig(),
 		refreshToken,
-	).OIDCToken()
+	).OIDCTokenCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +231,7 @@ func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 		extra.Set("nonce", nonce)
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	s.callbackSrv.ExpectCallback(&callbackRequest{

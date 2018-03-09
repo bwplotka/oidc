@@ -42,7 +42,7 @@ type OIDCTokenSource struct {
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Only JSON files are supported as ServiceAccount files.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src oidc.TokenSource, clearIDToken func() error, err error) {
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src *oidc.ReuseTokenSource, clearIDToken func() error, err error) {
 	oidcClient, err := oidc.NewClient(ctx, provider)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize OIDC client")
@@ -72,7 +72,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	return s.OIDCTokenCtx(s.ctx)
 }
 
-// OIDCToken is used to obtain new OIDC Token (which includes e.g access token and id token).
+// OIDCTokenCtx is used to obtain new OIDC Token (which includes e.g access token and id token).
 // No refresh token will be returned, because this is token source is only service Accounts and we don't need login for that anyway.
 // No caching is in place. We base for reuse token source to cache valid tokens in memory.
 func (s *OIDCTokenSource) OIDCTokenCtx(_ context.Context) (*oidc.Token, error) {

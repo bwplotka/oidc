@@ -43,7 +43,7 @@ func main() {
     // For IDToken verification...
     client.Verifier(...)
     // For ID token refreshing...
-    client.TokenSource(...).OIDCToken()
+    client.TokenSource(...).OIDCTokenCtx(context.Background())
 }
 ```
 

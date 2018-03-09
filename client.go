@@ -176,7 +176,7 @@ func (u *UserInfo) Claims(v interface{}) error {
 }
 
 // UserInfo uses the token source to query the provider's user info endpoint.
-func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSource) (*UserInfo, error) {
+func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSourceCtx) (*UserInfo, error) {
 	if c.discovery.UserInfoURL == "" {
 		return nil, errors.New("oidc: user info endpoint is not supported by this provider")
 	}
@@ -186,7 +186,7 @@ func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSource) (*UserIn
 		return nil, fmt.Errorf("oidc: create GET request: %v", err)
 	}
 
-	token, err := tokenSource.OIDCToken()
+	token, err := tokenSource.OIDCTokenCtx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: get access token: %v", err)
 	}
@@ -327,7 +327,8 @@ func (c *Client) ExchangeServiceAccount(ctx context.Context, cfg Config, googleS
 
 // TokenSource returns a TokenSource that returns t until t expires,
 // automatically refreshing it as necessary using the provided context.
-func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSource {
+// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
+func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) *ReuseTokenSource {
 	tkr := &TokenRefresher{
 		ctx: ctx,
 

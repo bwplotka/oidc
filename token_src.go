@@ -11,9 +11,20 @@ import (
 )
 
 //go:generate mockery -name TokenSource -case underscore
+//go:generate mockery -name TokenSourceCtx -case underscore
 
 // TokenSource is anything that can return an oidc token and verifier for token verification.
+// Deprecated: use TokenSourceCtx and OIDCTokenCtx method instead.
 type TokenSource interface {
+	Verifier() Verifier
+
+	// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
+	// Deprecated: use OIDCTokenCtx method instead.
+	OIDCToken() (*Token, error)
+}
+
+// TokenSource is anything that can return an oidc token and verifier for token verification.
+type TokenSourceCtx interface {
 	// OIDCTokenCtx must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
 	OIDCTokenCtx(context.Context) (*Token, error)
@@ -31,19 +42,20 @@ type TokenSource interface {
 type ReuseTokenSource struct {
 	ctx context.Context // ctx for HTTP requests.
 
-	new TokenSource // called when t is expired.
-	mu  sync.Mutex  // guards t
+	new TokenSourceCtx // called when t is expired.
+	mu  sync.Mutex     // guards t
 	t   *Token
 
 	// Optional std logger for debug log. The only case which will be logged is why OIDC token was invalid.
 	debugLogger *log.Logger
 }
 
-// NewReuseTokenSource returns a TokenSource which repeatedly returns the
+// NewReuseTokenSource returns a TokenSourceCtx which repeatedly returns the
 // same token as long as it's valid, starting with t.
 // As a second argument it returns reset function that enables to reset h
 // When its cached token is invalid, a new token is obtained from source.
-func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
+func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSourceCtx) (ret *ReuseTokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
 		ctx:         ctx,
 		t:           t,
@@ -54,7 +66,8 @@ func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret To
 }
 
 // NewReuseTokenSourceWithDebugLogger is the same as NewReuseTokenSource but with logger.
-func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
+func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSourceCtx) (ret *ReuseTokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
 		ctx:         ctx,
 		t:           t,
@@ -85,7 +98,7 @@ func (s *ReuseTokenSource) OIDCTokenCtx(ctx context.Context) (*Token, error) {
 	} else {
 		s.debugLogger.Println("reuseTokenSource: No token to reuse. Obtaining new one")
 	}
-	t, err := s.new.OIDCToken()
+	t, err := s.new.OIDCTokenCtx(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +118,7 @@ func (s *ReuseTokenSource) reset() {
 	s.t = nil
 }
 
-// TokenRefresher is a TokenSource that makes "grant_type"=="refresh_token"
+// TokenRefresher is a TokenSourceCtx that makes "grant_type"=="refresh_token"
 // HTTP requests to renew a token using a RefreshToken.
 type TokenRefresher struct {
 	ctx context.Context // used to get HTTP requests
@@ -117,7 +130,7 @@ type TokenRefresher struct {
 }
 
 // NewTokenRefresher constructs token refresher.
-func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) TokenSource {
+func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) *TokenRefresher {
 	return &TokenRefresher{
 		ctx:          ctx,
 		refreshToken: refreshToken,
@@ -168,14 +181,14 @@ func (tf *TokenRefresher) Verifier() Verifier {
 	return tf.client.Verifier(VerificationConfig{ClientID: tf.cfg.ClientID})
 }
 
-// StaticTokenSource returns a TokenSource that always returns the same token.
+// StaticTokenSource returns a TokenSourceCtx that always returns the same token.
 // Because the provided token t is never refreshed, StaticTokenSource is only
 // useful for tokens that never expire.
-func StaticTokenSource(t *Token) TokenSource {
+func StaticTokenSource(t *Token) staticTokenSource {
 	return staticTokenSource{t}
 }
 
-// staticTokenSource is a TokenSource that always returns the same Token.
+// staticTokenSource is a TokenSourceCtx that always returns the same Token.
 type staticTokenSource struct {
 	t *Token
 }
