@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -45,13 +46,25 @@ type TokenSourceTestSuite struct {
 	cache      *MockCache
 	oidcSource *OIDCTokenSource
 
-	provider *oidc_testing.Provider
+	provider          *oidc_testing.Provider
+	issuerTestSrv     *httptest.Server
+	issuerTestSrvCode int
 
 	closeSrv func()
 }
 
 func (s *TokenSourceTestSuite) SetupSuite() {
-	s.provider = &oidc_testing.Provider{}
+	s.issuerTestSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("content-type", "application/json")
+		w.WriteHeader(s.issuerTestSrvCode)
+		if s.issuerTestSrvCode == 200 {
+			m, err := json.Marshal(testToken)
+			s.Require().NoError(err)
+			fmt.Fprintln(w, string(m))
+		}
+	}))
+
+	s.provider = &oidc_testing.Provider{IssuerURL: s.issuerTestSrv.URL}
 	s.provider.Setup(s.T())
 	s.provider.MockDiscoveryCall()
 
@@ -96,9 +109,11 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 
 func (s *TokenSourceTestSuite) TearDownSuite() {
 	s.closeSrv()
+	s.issuerTestSrv.Close()
 }
 
 func (s *TokenSourceTestSuite) SetupTest() {
+	s.issuerTestSrvCode = 200
 	s.provider.Mock().Reset()
 
 	s.oidcSource.openBrowser = func(string) error {
@@ -168,24 +183,14 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 		s.Require().NoError(err)
 
 		s.Equal(fmt.Sprintf(
-			"https://issuer.org/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			"%s/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			s.issuerTestSrv.URL,
 			testClientID,
 			expectedWord,
 			url.QueryEscape(redirectURL),
 			strings.Join(s.testOIDCCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
-
-		t := oidc.TokenResponse{
-			AccessToken:  testToken.AccessToken,
-			RefreshToken: testToken.RefreshToken,
-			IDToken:      testToken.IDToken,
-			TokenType:    "Bearer",
-		}
-		tokenJSON, err := json.Marshal(t)
-		s.Require().NoError(err)
-
-		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusOK, tokenJSON))
 
 		go func() {
 			// Perform actual request in go routine.
@@ -322,6 +327,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 	s.cache.On("Token").Return(nil, nil)
+	s.issuerTestSrvCode = 503 // temporarily unavailable
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
@@ -333,15 +339,14 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 		s.Require().NoError(err)
 
 		s.Equal(fmt.Sprintf(
-			"https://issuer.org/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			"%s/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			s.issuerTestSrv.URL,
 			testClientID,
 			expectedWord,
 			url.QueryEscape(redirectURL),
 			strings.Join(s.testOIDCCfg.Scopes, "+"),
 			expectedWord,
 		), urlToGet)
-
-		s.provider.Mock().Push(rt.JSONResponseFunc(http.StatusGatewayTimeout, []byte(`{"error": "temporary unavailable"}`)))
 
 		go func() {
 			req, err := http.NewRequest("GET", fmt.Sprintf(
@@ -375,7 +380,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 
 	_, err := s.oidcSource.OIDCToken()
 	s.Require().Error(err)
-	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: \nResponse: {\"error\": \"temporary unavailable\"}", err.Error())
+	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: 503 Service Unavailable\nResponse: ", err.Error())
 
 	s.cache.AssertExpectations(s.T())
 	s.Equal(0, s.provider.Mock().Len())
