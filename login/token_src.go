@@ -48,7 +48,7 @@ type OIDCTokenSource struct {
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
 // Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src *oidc.ReuseTokenSource, clearIDToken func() error, err error) {
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	if cache == nil {
 		return nil, nil, errors.New("cache cannot be nil")
 	}

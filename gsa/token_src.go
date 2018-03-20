@@ -42,7 +42,7 @@ type OIDCTokenSource struct {
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Only JSON files are supported as ServiceAccount files.
-func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src *oidc.ReuseTokenSource, clearIDToken func() error, err error) {
+func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	oidcClient, err := oidc.NewClient(ctx, provider)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize OIDC client")

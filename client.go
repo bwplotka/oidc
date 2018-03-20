@@ -328,7 +328,7 @@ func (c *Client) ExchangeServiceAccount(ctx context.Context, cfg Config, googleS
 // TokenSource returns a TokenSource that returns t until t expires,
 // automatically refreshing it as necessary using the provided context.
 // Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) *ReuseTokenSource {
+func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSource {
 	tkr := &TokenRefresher{
 		ctx: ctx,
 

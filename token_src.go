@@ -45,7 +45,7 @@ type ReuseTokenSource struct {
 // As a second argument it returns reset function that enables to reset h
 // When its cached token is invalid, a new token is obtained from source.
 // Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret *ReuseTokenSource, clearIDToken func()) {
+func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
 		ctx:         ctx,
 		t:           t,
@@ -57,7 +57,7 @@ func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret *R
 
 // NewReuseTokenSourceWithDebugLogger is the same as NewReuseTokenSource but with logger.
 // Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSource) (ret *ReuseTokenSource, clearIDToken func()) {
+func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
 		ctx:         ctx,
 		t:           t,
@@ -120,7 +120,7 @@ type TokenRefresher struct {
 }
 
 // NewTokenRefresher constructs token refresher.
-func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) *TokenRefresher {
+func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) TokenSource {
 	return &TokenRefresher{
 		ctx:          ctx,
 		refreshToken: refreshToken,
@@ -174,7 +174,7 @@ func (tf *TokenRefresher) Verifier() Verifier {
 // StaticTokenSource returns a TokenSource that always returns the same token.
 // Because the provided token t is never refreshed, StaticTokenSource is only
 // useful for tokens that never expire.
-func StaticTokenSource(t *Token) staticTokenSource {
+func StaticTokenSource(t *Token) TokenSource {
 	return staticTokenSource{t}
 }
 
