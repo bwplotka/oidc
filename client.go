@@ -176,7 +176,7 @@ func (u *UserInfo) Claims(v interface{}) error {
 }
 
 // UserInfo uses the token source to query the provider's user info endpoint.
-func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSourceCtx) (*UserInfo, error) {
+func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSource) (*UserInfo, error) {
 	if c.discovery.UserInfoURL == "" {
 		return nil, errors.New("oidc: user info endpoint is not supported by this provider")
 	}
