@@ -66,7 +66,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAc
 	return reuseTokenSource, func() error { reset(); return nil }, nil
 }
 
-// OIDCTokenCtx is used to obtain new OIDC Token (which includes e.g access token and id token).
+// OIDCToken is used to obtain new OIDC Token (which includes e.g access token and id token).
 // No refresh token will be returned, because this is token source is only service Accounts and we don't need login for that anyway.
 // No caching is in place. We base for reuse token source to cache valid tokens in memory.
 func (s *OIDCTokenSource) OIDCToken(ctx context.Context) (*oidc.Token, error) {

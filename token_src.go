@@ -16,7 +16,7 @@ import (
 type TokenSource interface {
 	Verifier() Verifier
 
-	// OIDCTokenCtx must be safe for concurrent use by multiple goroutines.
+	// OIDCToken must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
 	OIDCToken(context.Context) (*Token, error)
 }
@@ -57,7 +57,7 @@ func NewReuseTokenSourceWithDebugLogger(debugLogger *log.Logger, t *Token, src T
 	return s, s.reset
 }
 
-// OIDCTokenCtx returns the current token if it's still valid, else will
+// OIDCToken returns the current token if it's still valid, else will
 // refresh the current token (using r.Context for HTTP client
 // information) and return the new one.
 func (s *ReuseTokenSource) OIDCToken(ctx context.Context) (*Token, error) {
@@ -110,7 +110,7 @@ func NewTokenRefresher(client *Client, cfg Config, refreshToken string) TokenSou
 	}
 }
 
-// OIDCTokenCtx is not safe for concurrent access, as it
+// OIDCToken is not safe for concurrent access, as it
 // updates the tokenRefresher's refreshToken field.
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
@@ -158,7 +158,7 @@ type staticTokenSource struct {
 	t *Token
 }
 
-// OIDCTokenCtx returns saved pointer to token.
+// OIDCToken returns saved pointer to token.
 func (s staticTokenSource) OIDCToken(_ context.Context) (*Token, error) {
 	return s.t, nil
 }
