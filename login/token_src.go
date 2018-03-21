@@ -222,7 +222,7 @@ func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 		extra.Set("nonce", nonce)
 	}
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
 	s.callbackSrv.ExpectCallback(&callbackRequest{
