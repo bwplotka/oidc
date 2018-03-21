@@ -25,7 +25,6 @@ type OIDCConfig struct {
 
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance. Strictly for Google Service Accounts.
 type OIDCTokenSource struct {
-	ctx    context.Context
 	logger *log.Logger
 
 	googleServiceAccountJSON []byte
@@ -42,7 +41,7 @@ type OIDCTokenSource struct {
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Only JSON files are supported as ServiceAccount files.
-// We are making request to google to get service account in constructor with context ctx,
+// We are making request to Google in constructor (with context ctx) to make sure oidc works.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	oidcClient, err := oidc.NewClient(ctx, provider)
 	if err != nil {

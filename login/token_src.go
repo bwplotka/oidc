@@ -46,7 +46,7 @@ type OIDCTokenSource struct {
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
-// We will send OIDC Connect request with context ctx.
+// We are making OIDC Connect request in constructor (with context ctx) to make sure oidc works.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	if cache == nil {
 		return nil, nil, errors.New("cache cannot be nil")

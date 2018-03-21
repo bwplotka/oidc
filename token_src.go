@@ -14,11 +14,10 @@ import (
 
 // TokenSource is anything that can return an oidc token and verifier for token verification.
 type TokenSource interface {
-	Verifier() Verifier
-
 	// OIDCToken must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
 	OIDCToken(context.Context) (*Token, error)
+	Verifier() Verifier
 }
 
 // ReuseTokenSource is a oidc TokenSource that holds a single token in memory
