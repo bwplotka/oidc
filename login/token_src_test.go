@@ -95,7 +95,6 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 	s.Require().NoError(err)
 
 	s.oidcSource = &OIDCTokenSource{
-		ctx:    s.provider.Context(),
 		logger: log.New(os.Stdout, "", 0),
 		cfg:    s.testCfg,
 
@@ -144,7 +143,7 @@ func (s *TokenSourceTestSuite) Test_CacheOK() {
 
 	s.provider.MockPubKeysCall(jwkSetJSON)
 
-	token, err := s.oidcSource.OIDCToken()
+	token, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().NoError(err)
 
 	s.Equal(expectedToken, *token)
@@ -232,7 +231,7 @@ func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 	}
 
 	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
-	token, err := s.oidcSource.OIDCToken()
+	token, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().NoError(err)
 
 	s.Equal(testToken, *token)
@@ -251,7 +250,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
 	}
 
 	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
-	token, err := s.oidcSource.OIDCToken()
+	token, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().NoError(err)
 
 	s.Equal(testToken, *token)
@@ -289,7 +288,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	// For 2th verification inside reuse TokenSource.
 	s.provider.MockPubKeysCall(jwkSetJSON2)
 
-	token, err := s.oidcSource.OIDCToken()
+	token, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().NoError(err)
 
 	s.Equal(expectedToken, *token)
@@ -316,7 +315,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 	}
 	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
 
-	token, err := s.oidcSource.OIDCToken()
+	token, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().NoError(err)
 
 	s.Equal(testToken, *token)
@@ -378,7 +377,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 		return nil
 	}
 
-	_, err := s.oidcSource.OIDCToken()
+	_, err := s.oidcSource.OIDCToken(s.provider.Context())
 	s.Require().Error(err)
 	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: 503 Service Unavailable\nResponse: ", err.Error())
 

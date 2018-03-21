@@ -27,7 +27,6 @@ type Cache interface {
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
 // It caches fetched tokens in provided TokenCache e.g on disk or in k8s config.
 type OIDCTokenSource struct {
-	ctx    context.Context
 	logger *log.Logger
 	cfg    Config
 
@@ -47,7 +46,7 @@ type OIDCTokenSource struct {
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
-// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
+// We will send OIDC Connect request with context ctx.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	if cache == nil {
 		return nil, nil, errors.New("cache cannot be nil")
@@ -59,7 +58,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 	}
 
 	s := &OIDCTokenSource{
-		ctx:    ctx,
 		logger: logger,
 		cfg:    cfg,
 
@@ -75,7 +73,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 		s.nonce = rand128Bits()
 	}
 
-	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(ctx, logger, nil, s)
+	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(logger, nil, s)
 	// Our clear ID token function needs to reset reuse token to make sense.
 	return reuseTokenSource, s.clearIDToken(reset), nil
 }
@@ -127,15 +125,9 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 	return oidcConfig
 }
 
-// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
-// Deprecated: use OIDCTokenCtx method instead.
-func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
-	return s.OIDCTokenCtx(s.ctx)
-}
-
 // OIDCToken is used to obtain new OIDC Token (which includes e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
-func (s *OIDCTokenSource) OIDCTokenCtx(ctx context.Context) (*oidc.Token, error) {
+func (s *OIDCTokenSource) OIDCToken(ctx context.Context) (*oidc.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -182,11 +174,10 @@ func (s *OIDCTokenSource) refreshToken(ctx context.Context, refreshToken string)
 		"Try to refresh access token using refresh token.")
 
 	token, err := oidc.NewTokenRefresher(
-		ctx,
 		s.oidcClient,
 		s.getOIDCConfig(),
 		refreshToken,
-	).OIDCTokenCtx(ctx)
+	).OIDCToken(ctx)
 	if err != nil {
 		return nil, err
 	}

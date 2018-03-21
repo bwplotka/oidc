@@ -186,7 +186,7 @@ func (c *Client) UserInfo(ctx context.Context, tokenSource TokenSource) (*UserIn
 		return nil, fmt.Errorf("oidc: create GET request: %v", err)
 	}
 
-	token, err := tokenSource.OIDCTokenCtx(ctx)
+	token, err := tokenSource.OIDCToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("oidc: get access token: %v", err)
 	}
@@ -327,18 +327,15 @@ func (c *Client) ExchangeServiceAccount(ctx context.Context, cfg Config, googleS
 
 // TokenSource returns a TokenSource that returns t until t expires,
 // automatically refreshing it as necessary using the provided context.
-// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func (c *Client) TokenSource(ctx context.Context, cfg Config, t *Token) TokenSource {
+func (c *Client) TokenSource(cfg Config, t *Token) TokenSource {
 	tkr := &TokenRefresher{
-		ctx: ctx,
-
 		client: c,
 		cfg:    cfg,
 	}
 	if t != nil {
 		tkr.refreshToken = t.RefreshToken
 	}
-	src, _ := NewReuseTokenSource(ctx, t, tkr)
+	src, _ := NewReuseTokenSource(t, tkr)
 	return src
 }
 

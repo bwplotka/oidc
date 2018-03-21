@@ -16,13 +16,9 @@ import (
 type TokenSource interface {
 	Verifier() Verifier
 
-	// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
-	// Deprecated: use OIDCTokenCtx method instead.
-	OIDCToken() (*Token, error)
-
 	// OIDCTokenCtx must be safe for concurrent use by multiple goroutines.
 	// The returned Token must not be modified.
-	OIDCTokenCtx(context.Context) (*Token, error)
+	OIDCToken(context.Context) (*Token, error)
 }
 
 // ReuseTokenSource is a oidc TokenSource that holds a single token in memory
@@ -30,8 +26,6 @@ type TokenSource interface {
 // Token. If it's expired, it will be auto-refreshed using the
 // new TokenSource.
 type ReuseTokenSource struct {
-	ctx context.Context // ctx for HTTP requests.
-
 	new TokenSource // called when t is expired.
 	mu  sync.Mutex  // guards t
 	t   *Token
@@ -44,10 +38,8 @@ type ReuseTokenSource struct {
 // same token as long as it's valid, starting with t.
 // As a second argument it returns reset function that enables to reset h
 // When its cached token is invalid, a new token is obtained from source.
-// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+func NewReuseTokenSource(t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
-		ctx:         ctx,
 		t:           t,
 		new:         src,
 		debugLogger: log.New(ioutil.Discard, "", 0),
@@ -56,10 +48,8 @@ func NewReuseTokenSource(ctx context.Context, t *Token, src TokenSource) (ret To
 }
 
 // NewReuseTokenSourceWithDebugLogger is the same as NewReuseTokenSource but with logger.
-// Warning: do not use per request timeouts in ctx. Also use OIDCTokenCtx instead.
-func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Logger, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
+func NewReuseTokenSourceWithDebugLogger(debugLogger *log.Logger, t *Token, src TokenSource) (ret TokenSource, clearIDToken func()) {
 	s := &ReuseTokenSource{
-		ctx:         ctx,
 		t:           t,
 		new:         src,
 		debugLogger: debugLogger,
@@ -67,16 +57,10 @@ func NewReuseTokenSourceWithDebugLogger(ctx context.Context, debugLogger *log.Lo
 	return s, s.reset
 }
 
-// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
-// Deprecated: use OIDCTokenCtx method instead.
-func (s *ReuseTokenSource) OIDCToken() (*Token, error) {
-	return s.OIDCTokenCtx(s.ctx)
-}
-
 // OIDCTokenCtx returns the current token if it's still valid, else will
 // refresh the current token (using r.Context for HTTP client
 // information) and return the new one.
-func (s *ReuseTokenSource) OIDCTokenCtx(ctx context.Context) (*Token, error) {
+func (s *ReuseTokenSource) OIDCToken(ctx context.Context) (*Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.t != nil {
@@ -88,7 +72,7 @@ func (s *ReuseTokenSource) OIDCTokenCtx(ctx context.Context) (*Token, error) {
 	} else {
 		s.debugLogger.Println("reuseTokenSource: No token to reuse. Obtaining new one")
 	}
-	t, err := s.new.OIDCTokenCtx(ctx)
+	t, err := s.new.OIDCToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +95,6 @@ func (s *ReuseTokenSource) reset() {
 // TokenRefresher is a TokenSource that makes "grant_type"=="refresh_token"
 // HTTP requests to renew a token using a RefreshToken.
 type TokenRefresher struct {
-	ctx context.Context // used to get HTTP requests
-
 	refreshToken string
 	client       *Client
 
@@ -120,19 +102,12 @@ type TokenRefresher struct {
 }
 
 // NewTokenRefresher constructs token refresher.
-func NewTokenRefresher(ctx context.Context, client *Client, cfg Config, refreshToken string) TokenSource {
+func NewTokenRefresher(client *Client, cfg Config, refreshToken string) TokenSource {
 	return &TokenRefresher{
-		ctx:          ctx,
 		refreshToken: refreshToken,
 		client:       client,
 		cfg:          cfg,
 	}
-}
-
-// OIDCToken is the same as OIDCTokenCtx, except it uses context from itself.
-// Deprecated: use OIDCTokenCtx method instead.
-func (tf *TokenRefresher) OIDCToken() (*Token, error) {
-	return tf.OIDCTokenCtx(tf.ctx)
 }
 
 // OIDCTokenCtx is not safe for concurrent access, as it
@@ -140,7 +115,7 @@ func (tf *TokenRefresher) OIDCToken() (*Token, error) {
 // It is meant to be used with ReuseTokenSource which
 // synchronizes calls to this method with its own mutex.
 // NOTE: Returned token is not verified.
-func (tf *TokenRefresher) OIDCTokenCtx(ctx context.Context) (*Token, error) {
+func (tf *TokenRefresher) OIDCToken(ctx context.Context) (*Token, error) {
 	if tf.refreshToken == "" {
 		return nil, errors.New("oauth2: token expired and refresh token is not set")
 	}
@@ -183,13 +158,8 @@ type staticTokenSource struct {
 	t *Token
 }
 
-// OIDCToken returns saved pointer to token.
-func (s staticTokenSource) OIDCToken() (*Token, error) {
-	return s.OIDCTokenCtx(nil)
-}
-
 // OIDCTokenCtx returns saved pointer to token.
-func (s staticTokenSource) OIDCTokenCtx(_ context.Context) (*Token, error) {
+func (s staticTokenSource) OIDCToken(_ context.Context) (*Token, error) {
 	return s.t, nil
 }
 
