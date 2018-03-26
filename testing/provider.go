@@ -14,20 +14,6 @@ import (
 	"gopkg.in/square/go-jose.v2"
 )
 
-// Defaults
-var (
-	TestIssuerURL = "https://issuer.org"
-)
-
-func TestDiscovery(testIssuerURL string) oidc.DiscoveryJSON {
-	return oidc.DiscoveryJSON{
-		Issuer:   testIssuerURL,
-		AuthURL:  testIssuerURL + "/auth1",
-		TokenURL: testIssuerURL + "/token1",
-		JWKSURL:  testIssuerURL + "/jwks1",
-	}
-}
-
 type Request struct {
 	Method  string
 	URL     string
@@ -35,14 +21,10 @@ type Request struct {
 }
 
 type Provider struct {
-	IssuerURL string
-	// Used for initial discovery.
-	Discovery oidc.DiscoveryJSON
-
-	t *testing.T
-
 	IssuerTestSrv    *httptest.Server
 	ExpectedRequests []Request
+
+	t *testing.T
 }
 
 func (p *Provider) Setup(t *testing.T) {
@@ -61,14 +43,6 @@ func (p *Provider) Setup(t *testing.T) {
 		}
 		expected.Handler(w)
 	}))
-
-	if p.IssuerURL == "" {
-		p.IssuerURL = p.IssuerTestSrv.URL
-	}
-	var empty oidc.DiscoveryJSON
-	if p.Discovery == empty {
-		p.Discovery = TestDiscovery(p.IssuerTestSrv.URL)
-	}
 }
 
 func (p *Provider) MockDiscoveryCall() {
@@ -76,7 +50,12 @@ func (p *Provider) MockDiscoveryCall() {
 		Method: "GET",
 		URL:    oidc.DiscoveryEndpoint,
 		Handler: func(w http.ResponseWriter) {
-			jsonDiscovery, err := json.Marshal(p.Discovery)
+			jsonDiscovery, err := json.Marshal(oidc.DiscoveryJSON{
+				Issuer:   p.IssuerTestSrv.URL,
+				AuthURL:  p.IssuerTestSrv.URL + "/auth1",
+				TokenURL: p.IssuerTestSrv.URL + "/token1",
+				JWKSURL:  p.IssuerTestSrv.URL + "/jwks1",
+			})
 			require.NoError(p.t, err)
 			fmt.Fprintln(w, string(jsonDiscovery))
 		},
@@ -93,6 +72,18 @@ func (p *Provider) MockPubKeysCall(jwkSetJSON []byte) {
 	})
 }
 
+func (p *Provider) MockTokenCall(statusCode int, token string) {
+	p.ExpectedRequests = append(p.ExpectedRequests, Request{
+		Method: "POST",
+		URL:    "/token1",
+		Handler: func(w http.ResponseWriter) {
+			w.Header().Add("content-type", "application/json")
+			w.WriteHeader(statusCode)
+			fmt.Fprintln(w, token)
+		},
+	})
+}
+
 // NewIDToken creates new token. Feel free to override basic claims in customClaim for various tests.
 // NOTE: It is important that on every call we
 func (p *Provider) NewIDToken(clientID string, subject string, nonce string, customClaims ...interface{}) (idToken string, jwkSetJSON []byte) {
@@ -101,7 +92,7 @@ func (p *Provider) NewIDToken(clientID string, subject string, nonce string, cus
 
 	issuedAt := time.Now()
 	jwsBasic := builder.JWS().Claims(&oidc.IDToken{
-		Issuer:   p.IssuerURL,
+		Issuer:   p.IssuerTestSrv.URL,
 		Nonce:    nonce,
 		Expiry:   oidc.NewNumericDate(issuedAt.Add(1 * time.Hour)),
 		IssuedAt: oidc.NewNumericDate(issuedAt),

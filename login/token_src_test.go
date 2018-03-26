@@ -56,7 +56,7 @@ func (s *TokenSourceTestSuite) SetupSuite() {
 	s.provider.MockDiscoveryCall()
 
 	s.testOIDCCfg = OIDCConfig{
-		Provider: s.provider.IssuerURL,
+		Provider: s.provider.IssuerTestSrv.URL,
 
 		ClientID:     testClientID,
 		ClientSecret: testClientSecret,
@@ -153,20 +153,16 @@ func stripArgFromURL(arg string, urlToStrip string) (string, error) {
 	return argValue, nil
 }
 
-func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(string) error {
-	s.provider.ExpectedRequests = append(s.provider.ExpectedRequests, oidc_testing.Request{
-		Method: "POST",
-		URL:    "/token1",
-		Handler: func(w http.ResponseWriter) {
-			b, err := json.Marshal(testToken)
-			require.NoError(s.T(), err)
-			w.Header().Add("content-type", "application/json")
-			fmt.Fprintln(w, string(b))
-		},
-	})
+func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string, retToken interface{}) func(string) error {
+	b, err := json.Marshal(retToken)
+	require.NoError(s.T(), err)
+	s.provider.MockTokenCall(http.StatusOK, string(b))
+
+	// testify/suite is not thread safe, go test -race fails.
+	t := s.T()
 	return func(urlToGet string) error {
 		redirectURL, err := stripArgFromURL("redirect_uri", urlToGet)
-		s.Require().NoError(err)
+		require.NoError(t, err)
 
 		s.Equal(fmt.Sprintf(
 			"%s/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
@@ -187,10 +183,10 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 				"code1",
 				expectedWord,
 			), nil)
-			s.Require().NoError(err)
+			require.NoError(t, err)
 
 			u, err := url.Parse(redirectURL)
-			s.Require().NoError(err)
+			require.NoError(t, err)
 			for i := 0; i <= 5; i++ {
 				_, err = net.Dial("tcp", u.Host)
 				if err == nil {
@@ -198,12 +194,11 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string) func(
 				}
 				time.Sleep(100 * time.Millisecond)
 			}
-			s.Require().NoError(err, "Server should be able to start and listen on provided address.")
+			require.NoError(t, err, "Server should be able to start and listen on provided address.")
 
 			res, err := http.DefaultClient.Do(req)
-			s.Require().NoError(err)
-
-			s.Equal(http.StatusOK, res.StatusCode)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
 		}()
 		return nil
 	}
@@ -218,7 +213,7 @@ func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 		return expectedWord
 	}
 
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
 
@@ -237,7 +232,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
 		return expectedWord
 	}
 
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
 
@@ -261,24 +256,16 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 	// For first verification inside OIDC TokenSource.
 	s.provider.MockPubKeysCall(jwkSetJSON)
 
-	// OK Refresh response.
-	t := oidc.TokenResponse{
+	const expectedWord = "secret_token"
+	s.oidcSource.genRandToken = func() string {
+		return expectedWord
+	}
+	// Ok refreshToken response.
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, oidc.TokenResponse{
 		AccessToken:  expectedToken.AccessToken,
 		RefreshToken: expectedToken.RefreshToken,
 		IDToken:      expectedToken.IDToken,
 		TokenType:    "Bearer",
-	}
-	tokenJSON, err := json.Marshal(t)
-	s.Require().NoError(err)
-
-	s.provider.ExpectedRequests = append(s.provider.ExpectedRequests, oidc_testing.Request{
-		Method: "POST",
-		URL:    "/token1",
-		Handler: func(w http.ResponseWriter) {
-			b, err := json.Marshal(tokenJSON)
-			require.NoError(s.T(), err)
-			fmt.Fprintln(w, string(b))
-		},
 	})
 
 	// For 2th verification inside reuse TokenSource.
@@ -302,20 +289,13 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 
 	// For first verification inside OIDC TokenSource.
 	s.provider.MockPubKeysCall(jwkSetJSON)
-	s.provider.ExpectedRequests = append(s.provider.ExpectedRequests, oidc_testing.Request{
-		Method: "POST",
-		URL:    "/token1",
-		Handler: func(w http.ResponseWriter) {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintln(w, `{"error": "bad_request"}`)
-		},
-	})
+	s.provider.MockTokenCall(http.StatusBadRequest, `{"error": "bad_request"}`)
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
 		return expectedWord
 	}
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
 
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
@@ -328,19 +308,15 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 
 func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 	s.cache.On("Token").Return(nil, nil)
-	s.provider.ExpectedRequests = append(s.provider.ExpectedRequests, oidc_testing.Request{
-		Method: "POST",
-		URL:    "/token1",
-		Handler: func(w http.ResponseWriter) {
-			w.WriteHeader(http.StatusServiceUnavailable)
-		},
-	})
+	s.provider.MockTokenCall(http.StatusServiceUnavailable, "")
 
 	const expectedWord = "secret_token"
 	s.oidcSource.genRandToken = func() string {
 		return expectedWord
 	}
 
+	// testify/suite is not thread safe, go test -race fails.
+	t := s.T()
 	s.oidcSource.openBrowser = func(urlToGet string) error {
 		redirectURL, err := stripArgFromURL("redirect_uri", urlToGet)
 		s.Require().NoError(err)
@@ -362,10 +338,10 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 				"code1",
 				expectedWord,
 			), nil)
-			s.Require().NoError(err)
+			require.NoError(t, err)
 
 			u, err := url.Parse(redirectURL)
-			s.Require().NoError(err)
+			require.NoError(t, err)
 			for i := 0; i <= 5; i++ {
 				_, err = net.Dial("tcp", u.Host)
 				if err == nil {
@@ -373,13 +349,13 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 				}
 				time.Sleep(100 * time.Millisecond)
 			}
-			s.Require().NoError(err)
+			require.NoError(t, err)
 
 			res, err := http.DefaultClient.Do(req)
-			s.Require().NoError(err)
+			require.NoError(t, err)
 
 			// Still it should be ok.
-			s.Equal(http.StatusOK, res.StatusCode)
+			require.Equal(t, http.StatusOK, res.StatusCode)
 		}()
 
 		return nil
@@ -387,7 +363,7 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_ErrCallback() {
 
 	_, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().Error(err)
-	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: 503 Service Unavailable\nResponse: ", err.Error())
+	s.Equal("Failed to obtain new token. Err: oidc: Callback error: oauth2: cannot fetch token: 503 Service Unavailable\nResponse: \n", err.Error())
 
 	s.cache.AssertExpectations(s.T())
 	s.Len(s.provider.ExpectedRequests, 0)
