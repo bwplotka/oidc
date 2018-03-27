@@ -40,8 +40,7 @@ func TestIsAuthorized(t *testing.T) {
 		"perms2": []string{"secret-permission"},
 	})
 	p.MockPubKeysCall(keys)
-	err = a.IsAuthorized(context.Background(), notAuthorizedToken)
-	require.Error(t, err, "token has wrong perms - expected to be not authorized.")
+	require.Error(t, a.IsAuthorized(context.Background(), notAuthorizedToken), "token has wrong perms - expected to be not authorized.")
 
 	// Perms claim ok, but type is wrong.
 	notAuthorizedToken, keys = p.NewIDToken(testConfig.ClientID, "sub1", "", map[string]interface{}{
