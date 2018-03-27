@@ -1,46 +1,85 @@
-package authorize_test
+package authorize
 
 import (
 	"fmt"
 	"testing"
 
-	"github.com/Bplotka/oidc/authorize"
 	"github.com/stretchr/testify/assert"
 )
 
 var (
-	trueCond  = func([]string) bool { return true }
-	falseCond = func([]string) bool { return false }
+	trueCond = Condition{
+		stringRepr:    "true",
+		isSatisfiedBy: func([]string) bool { return true },
+	}
+	falseCond = Condition{
+		stringRepr:    "false",
+		isSatisfiedBy: func([]string) bool { return false },
+	}
 )
 
 func TestOR(t *testing.T) {
 	somePerms := []string{"a", "b", "c"}
 
-	assert.False(t, authorize.OR()(somePerms), "empty OR should return false.")
+	c := OR()
+	assert.False(t, c.isSatisfiedBy(somePerms), "empty OR should return false.")
+	assert.Equal(t, "( || )", c.stringRepr)
 
-	assert.False(t, authorize.OR(falseCond)(somePerms), "false == false")
-	assert.True(t, authorize.OR(trueCond)(somePerms), "true == true")
+	c = OR(falseCond)
+	assert.False(t, c.isSatisfiedBy(somePerms), "false == false")
+	assert.Equal(t, "(false)", c.stringRepr)
 
-	assert.True(t, authorize.OR(trueCond, trueCond, trueCond)(somePerms), "true OR true OR true == true")
-	assert.False(t, authorize.OR(falseCond, falseCond, falseCond)(somePerms), "false OR false OR false == false")
-	assert.True(t, authorize.OR(falseCond, trueCond, falseCond)(somePerms), "false OR true OR false == true")
+	c = OR(trueCond)
+	assert.True(t, c.isSatisfiedBy(somePerms), "true == true")
+	assert.Equal(t, "(true)", c.stringRepr)
+
+	c = OR(trueCond, trueCond, trueCond)
+	assert.True(t, c.isSatisfiedBy(somePerms), "true OR true OR true == true")
+	assert.Equal(t, "(true || true || true)", c.stringRepr)
+
+	c = OR(falseCond, falseCond, falseCond)
+	assert.False(t, c.isSatisfiedBy(somePerms), "false OR false OR false == false")
+	assert.Equal(t, "(false || false || false)", c.stringRepr)
+
+	c = OR(falseCond, trueCond, falseCond)
+	assert.True(t, c.isSatisfiedBy(somePerms), "false OR true OR false == true")
+	assert.Equal(t, "(false || true || false)", c.stringRepr)
 }
 
 func TestAND(t *testing.T) {
 	somePerms := []string{"a", "b", "c"}
 
-	assert.False(t, authorize.AND()(somePerms), "empty AND should return false.")
+	c := AND()
+	assert.False(t, c.isSatisfiedBy(somePerms), "empty AND should return false.")
+	assert.Equal(t, "( && )", c.stringRepr)
 
-	assert.False(t, authorize.AND(falseCond)(somePerms), "false == false")
-	assert.True(t, authorize.AND(trueCond)(somePerms), "true == true")
+	c = AND(falseCond)
+	assert.False(t, c.isSatisfiedBy(somePerms), "false == false")
+	assert.Equal(t, "(false)", c.stringRepr)
 
-	assert.True(t, authorize.AND(trueCond, trueCond, trueCond)(somePerms), "true OR true OR true == true")
-	assert.False(t, authorize.AND(falseCond, falseCond, falseCond)(somePerms), "false OR false OR false == false")
-	assert.False(t, authorize.AND(falseCond, trueCond, falseCond)(somePerms), "false OR true OR false == false")
+	c = AND(trueCond)
+	assert.True(t, c.isSatisfiedBy(somePerms), "true == true")
+	assert.Equal(t, "(true)", c.stringRepr)
+
+	c = AND(trueCond, trueCond, trueCond)
+	assert.True(t, c.isSatisfiedBy(somePerms), "true OR true OR true == true")
+	assert.Equal(t, "(true && true && true)", c.stringRepr)
+
+	c = AND(falseCond, falseCond, falseCond)
+	assert.False(t, c.isSatisfiedBy(somePerms), "false OR false OR false == false")
+	assert.Equal(t, "(false && false && false)", c.stringRepr)
+
+	c = AND(falseCond, trueCond, falseCond)
+	assert.False(t, AND(falseCond, trueCond, falseCond).isSatisfiedBy(somePerms), "false OR true OR false == false")
+	assert.Equal(t, "(false && true && false)", c.stringRepr)
+}
+
+func TestComposite(t *testing.T) {
+	assert.Equal(t, "(false || false || true || (false) || (true && true))", OR(falseCond, falseCond, trueCond, OR(falseCond), AND(trueCond, trueCond)).stringRepr)
 }
 
 func TestContains(t *testing.T) {
-	cond := authorize.Contains("a")
+	cond := Contains("a")
 	for _, spec := range []struct {
 		perms    []string
 		expected bool
@@ -62,6 +101,6 @@ func TestContains(t *testing.T) {
 			expected: true,
 		},
 	} {
-		assert.Equal(t, spec.expected, cond(spec.perms), fmt.Sprintf("Should work for %v", spec.perms))
+		assert.Equal(t, spec.expected, cond.isSatisfiedBy(spec.perms), fmt.Sprintf("Should work for %v", spec.perms))
 	}
 }
