@@ -388,9 +388,6 @@ func (s *TokenSourceTestSuite) Test_ClearIDToken_ClearOnlyIDToken() {
 		s.Assert().Equal(token.RefreshToken, t.RefreshToken)
 	}).Return(nil)
 
-	resetDone := true
-	clear := s.oidcSource.clearIDToken(func() { resetDone = true })
-	s.Require().NoError(clear())
-
+	s.Require().NoError(s.oidcSource.clearIDToken(func() {})())
 	s.cache.AssertExpectations(s.T())
 }
