@@ -41,7 +41,7 @@ type OIDCTokenSource struct {
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Only JSON files are supported as ServiceAccount files.
-// We are making request to Google in constructor (with context ctx) to make sure oidc works.
+// We are making request to Google in constructor (with context ctx) to maintain fresh public key set for Google provider.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	oidcClient, err := oidc.NewClient(ctx, provider)
 	if err != nil {
