@@ -27,7 +27,6 @@ type Cache interface {
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance.
 // It caches fetched tokens in provided TokenCache e.g on disk or in k8s config.
 type OIDCTokenSource struct {
-	ctx    context.Context
 	logger *log.Logger
 	cfg    Config
 
@@ -47,6 +46,7 @@ type OIDCTokenSource struct {
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Note that OIDC configuration can be passed only from cache. This is due the fact that configuration can be stored in cache as well.
 // If the loginServer is nil, login is disabled.
+// We are making OIDC Connect request in constructor (with context ctx) to make sure oidc works.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cache Cache, callbackSrv *CallbackServer) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	if cache == nil {
 		return nil, nil, errors.New("cache cannot be nil")
@@ -58,7 +58,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 	}
 
 	s := &OIDCTokenSource{
-		ctx:    ctx,
 		logger: logger,
 		cfg:    cfg,
 
@@ -74,7 +73,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, cfg Config, cac
 		s.nonce = rand128Bits()
 	}
 
-	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(ctx, logger, nil, s)
+	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(logger, nil, s)
 	// Our clear ID token function needs to reset reuse token to make sense.
 	return reuseTokenSource, s.clearIDToken(reset), nil
 }
@@ -128,7 +127,7 @@ func (s *OIDCTokenSource) getOIDCConfigWithRedirectURL(redirectURL string) oidc.
 
 // OIDCToken is used to obtain new OIDC Token (which includes e.g access token, refresh token and id token). It does that by
 // using a Refresh Token to obtain new Tokens. If the cached one is still valid it returns it immediately.
-func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
+func (s *OIDCTokenSource) OIDCToken(ctx context.Context) (*oidc.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -136,7 +135,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 	if err != nil {
 		s.logger.Printf("Warn: Failed to get cached token or token is invalid. Err: %v", err)
 	} else if cachedToken != nil {
-		err = cachedToken.IsValid(s.ctx, s.Verifier())
+		err = cachedToken.IsValid(ctx, s.Verifier())
 		if err == nil {
 			// Successfully retrieved a non-expired cached token and only if we have ID token as well.
 			return cachedToken, nil
@@ -144,7 +143,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 		s.logger.Printf("Warn: Cached token is not valid. Cause: %v\n", err)
 		if cachedToken.RefreshToken != "" {
 			// Only if we have refresh token, we can refresh NewIDToken.
-			oidcToken, err := s.refreshToken(cachedToken.RefreshToken)
+			oidcToken, err := s.refreshToken(ctx, cachedToken.RefreshToken)
 			if err == nil {
 				return oidcToken, nil
 			}
@@ -154,7 +153,7 @@ func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
 		}
 	}
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
-	newToken, err := s.newToken()
+	newToken, err := s.newToken(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to obtain new token. Err: %v", err)
 	}
@@ -170,21 +169,20 @@ func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 	})
 }
 
-func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error) {
+func (s *OIDCTokenSource) refreshToken(ctx context.Context, refreshToken string) (*oidc.Token, error) {
 	s.logger.Printf("Debug: Cached token has none or expired ID token or access token. " +
 		"Try to refresh access token using refresh token.")
 
 	token, err := oidc.NewTokenRefresher(
-		s.ctx,
 		s.oidcClient,
 		s.getOIDCConfig(),
 		refreshToken,
-	).OIDCToken()
+	).OIDCToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.Verifier().Verify(s.ctx, token.IDToken)
+	_, err = s.Verifier().Verify(ctx, token.IDToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify idToken from provider. Err: %v", err)
 	}
@@ -210,7 +208,7 @@ func (s *OIDCTokenSource) refreshToken(refreshToken string) (*oidc.Token, error)
 // In case of none CallbackServer it will block login.
 // NOTE: this flow will fail on any random request that will fly to callback handler in the moment of running this method.
 // Currently there is no way to differentiate it with proper redirect call from Provider.
-func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
+func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 	if s.callbackSrv == nil {
 		return nil, errors.New("Refresh token expired or not specified. Login disabled.")
 	}
@@ -224,11 +222,11 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 		extra.Set("nonce", nonce)
 	}
 
-	ctx, cancel := context.WithTimeout(s.ctx, 1*time.Minute)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 	defer cancel()
 
 	s.callbackSrv.ExpectCallback(&callbackRequest{
-		ctx:           ctx,
+		ctx:           ctxWithTimeout,
 		expectedState: state,
 		client:        s.oidcClient,
 		cfg:           s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()),
@@ -263,7 +261,7 @@ func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
 			s.logger.Printf("Warn: Cannot cache token. Err: %v", err)
 		}
 		return msg.token, nil
-	case <-ctx.Done():
+	case <-ctxWithTimeout.Done():
 		return nil, fmt.Errorf("oidc Deadline Exceeded: Timed out waiting for token. Please retry the command and open the URL printed above in a browser if it doesn't open automatically")
 	}
 }

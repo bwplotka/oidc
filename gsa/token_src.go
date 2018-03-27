@@ -25,7 +25,6 @@ type OIDCConfig struct {
 
 // OIDCTokenSource implements `oidc.TokenSource` interface to perform oidc-browser-dance. Strictly for Google Service Accounts.
 type OIDCTokenSource struct {
-	ctx    context.Context
 	logger *log.Logger
 
 	googleServiceAccountJSON []byte
@@ -42,6 +41,7 @@ type OIDCTokenSource struct {
 
 // NewOIDCTokenSource constructs OIDCTokenSource.
 // Only JSON files are supported as ServiceAccount files.
+// We are making request to Google in constructor (with context ctx) to maintain fresh public key set for Google provider.
 func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAccountJSON []byte, provider string, cfg OIDCConfig) (src oidc.TokenSource, clearIDToken func() error, err error) {
 	oidcClient, err := oidc.NewClient(ctx, provider)
 	if err != nil {
@@ -49,7 +49,6 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAc
 	}
 
 	s := &OIDCTokenSource{
-		ctx:    ctx,
 		logger: logger,
 		googleServiceAccountJSON: googleServiceAccountJSON,
 		oidcClient:               oidcClient,
@@ -60,7 +59,7 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAc
 		},
 	}
 
-	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(ctx, logger, nil, s)
+	reuseTokenSource, reset := oidc.NewReuseTokenSourceWithDebugLogger(logger, nil, s)
 
 	// Our clear ID token function needs to only reset reuse token.
 	return reuseTokenSource, func() error { reset(); return nil }, nil
@@ -69,12 +68,12 @@ func NewOIDCTokenSource(ctx context.Context, logger *log.Logger, googleServiceAc
 // OIDCToken is used to obtain new OIDC Token (which includes e.g access token and id token).
 // No refresh token will be returned, because this is token source is only service Accounts and we don't need login for that anyway.
 // No caching is in place. We base for reuse token source to cache valid tokens in memory.
-func (s *OIDCTokenSource) OIDCToken() (*oidc.Token, error) {
+func (s *OIDCTokenSource) OIDCToken(ctx context.Context) (*oidc.Token, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Our request for access token was denied, either we had no RefreshToken, it was invalid or expired.
-	newToken, err := s.newToken()
+	newToken, err := s.newToken(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to obtain new token.")
 	}
@@ -91,10 +90,10 @@ func (s *OIDCTokenSource) Verifier() oidc.Verifier {
 }
 
 // newToken calls URL to Provider token endpoint with special grant_type "service_account" to exchange Google SA for ID token.
-func (s *OIDCTokenSource) newToken() (*oidc.Token, error) {
+func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 	s.logger.Print("Debug: Exchanging SA JWT for IDToken")
 
-	ctx, cancel := context.WithTimeout(context.TODO(), exchangeServiceAccountTimeout)
+	ctx, cancel := context.WithTimeout(ctx, exchangeServiceAccountTimeout)
 	defer cancel()
 
 	var extra []url.Values

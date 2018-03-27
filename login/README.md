@@ -37,7 +37,7 @@ func main() {
 		// handle err...
 	}
 
-	token, err := source.OIDCToken()
+	token, err := source.OIDCToken(context.Background())
 	if err != nil {
 	 // handle err...
 	}

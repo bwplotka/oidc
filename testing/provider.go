@@ -1,80 +1,87 @@
 package oidc_testing
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/Bplotka/go-httpt"
-	"github.com/Bplotka/go-httpt/rt"
 	"github.com/Bplotka/go-jwt"
 	"github.com/Bplotka/oidc"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/square/go-jose.v2"
 )
 
-// Defaults
-var (
-	TestIssuerURL = "https://issuer.org"
-)
-
-func TestDiscovery(testIssuerURL string) oidc.DiscoveryJSON {
-	return oidc.DiscoveryJSON{
-		Issuer:   testIssuerURL,
-		AuthURL:  testIssuerURL + "/auth1",
-		TokenURL: testIssuerURL + "/token1",
-		JWKSURL:  testIssuerURL + "/jwks1",
-	}
+type Request struct {
+	Method  string
+	URL     string
+	Handler func(http.ResponseWriter)
 }
 
 type Provider struct {
-	IssuerURL string
-	// Used for initial discovery.
-	Discovery oidc.DiscoveryJSON
+	IssuerTestSrv    *httptest.Server
+	ExpectedRequests []Request
 
-	t       *testing.T
-	srv     *httpt.Server
-	testCtx context.Context
+	t *testing.T
 }
 
 func (p *Provider) Setup(t *testing.T) {
 	p.t = t
-	if p.IssuerURL == "" {
-		p.IssuerURL = TestIssuerURL
-	}
 
-	var empty oidc.DiscoveryJSON
-	if p.Discovery == empty {
-		p.Discovery = TestDiscovery(p.IssuerURL)
-	}
-
-	p.srv = httpt.NewServer(t)
-	p.testCtx = context.WithValue(context.TODO(), oidc.HTTPClientCtxKey, p.srv.HTTPClient())
-}
-
-// Context that should be used to propagate mocked HTTP client.
-func (p *Provider) Context() context.Context {
-	return p.testCtx
-}
-
-// Mock allows to mock provider response on certain requests.
-func (p *Provider) Mock() *httpt.Server {
-	return p.srv
+	p.IssuerTestSrv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.t.Logf("Mock issuer HTTP server received %s %s\n", r.Method, r.URL.EscapedPath())
+		if len(p.ExpectedRequests) == 0 {
+			p.t.Fatal("Expected received request queue is empty.")
+		}
+		// Take first expected request, match it with actual request and execute handler.
+		expected := p.ExpectedRequests[0]
+		p.ExpectedRequests = p.ExpectedRequests[1:]
+		if r.Method != expected.Method || r.URL.EscapedPath() != expected.URL {
+			p.t.Fatalf("Request does not match expectation %s %s", expected.Method, expected.URL)
+		}
+		expected.Handler(w)
+	}))
 }
 
 func (p *Provider) MockDiscoveryCall() {
-	jsonDiscovery, err := json.Marshal(p.Discovery)
-	require.NoError(p.t, err)
-
-	p.srv.On("GET", p.IssuerURL+oidc.DiscoveryEndpoint).
-		Push(rt.JSONResponseFunc(http.StatusOK, jsonDiscovery))
+	p.ExpectedRequests = append(p.ExpectedRequests, Request{
+		Method: "GET",
+		URL:    oidc.DiscoveryEndpoint,
+		Handler: func(w http.ResponseWriter) {
+			jsonDiscovery, err := json.Marshal(oidc.DiscoveryJSON{
+				Issuer:   p.IssuerTestSrv.URL,
+				AuthURL:  p.IssuerTestSrv.URL + "/auth1",
+				TokenURL: p.IssuerTestSrv.URL + "/token1",
+				JWKSURL:  p.IssuerTestSrv.URL + "/jwks1",
+			})
+			require.NoError(p.t, err)
+			fmt.Fprintln(w, string(jsonDiscovery))
+		},
+	})
 }
 
 func (p *Provider) MockPubKeysCall(jwkSetJSON []byte) {
-	p.srv.On("GET", p.Discovery.JWKSURL).
-		Push(rt.JSONResponseFunc(http.StatusOK, jwkSetJSON))
+	p.ExpectedRequests = append(p.ExpectedRequests, Request{
+		Method: "GET",
+		URL:    "/jwks1",
+		Handler: func(w http.ResponseWriter) {
+			fmt.Fprintln(w, string(jwkSetJSON))
+		},
+	})
+}
+
+func (p *Provider) MockTokenCall(statusCode int, token string) {
+	p.ExpectedRequests = append(p.ExpectedRequests, Request{
+		Method: "POST",
+		URL:    "/token1",
+		Handler: func(w http.ResponseWriter) {
+			w.Header().Add("content-type", "application/json")
+			w.WriteHeader(statusCode)
+			fmt.Fprintln(w, token)
+		},
+	})
 }
 
 // NewIDToken creates new token. Feel free to override basic claims in customClaim for various tests.
@@ -85,7 +92,7 @@ func (p *Provider) NewIDToken(clientID string, subject string, nonce string, cus
 
 	issuedAt := time.Now()
 	jwsBasic := builder.JWS().Claims(&oidc.IDToken{
-		Issuer:   p.IssuerURL,
+		Issuer:   p.IssuerTestSrv.URL,
 		Nonce:    nonce,
 		Expiry:   oidc.NewNumericDate(issuedAt.Add(1 * time.Hour)),
 		IssuedAt: oidc.NewNumericDate(issuedAt),
