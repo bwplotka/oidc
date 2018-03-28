@@ -90,7 +90,7 @@ func TestIsAuthorizedError(t *testing.T) {
 	})
 	p.MockPubKeysCall(keys)
 	require.EqualError(t, a.IsAuthorized(context.Background(), authorizedToken),
-		`Unauthorized. Permissions [perm1] of user "sub1" do not match ((perm1 && perm2) || (perm1 && perm3)).`)
+		`Unauthorized. Permissions [perm1] of user "sub1" do not satisfy permission condition ((perm1 && perm2) || (perm1 && perm3)).`)
 	require.Len(t, p.ExpectedRequests, 0)
 
 	// perm1 and perm3 is ok.
