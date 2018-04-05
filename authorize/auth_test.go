@@ -1,4 +1,4 @@
-package authorize_test
+package authorize
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/Bplotka/oidc"
-	"github.com/Bplotka/oidc/authorize"
 	"github.com/Bplotka/oidc/testing"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,13 +22,13 @@ func TestIsAuthorized(t *testing.T) {
 	p.Setup(t)
 	p.MockDiscoveryCall()
 
-	testConfig := authorize.Config{
+	testConfig := Config{
 		Provider:      p.IssuerTestSrv.URL,
 		ClientID:      "clientID",
-		PermCondition: authorize.Contains("secret-permission"),
+		PermCondition: Contains("secret-permission"),
 		PermsClaim:    "perms",
 	}
-	a, err := authorize.New(context.Background(), testConfig)
+	a, err := New(context.Background(), testConfig)
 	require.NoError(t, err)
 
 	// No perms.
@@ -63,5 +63,49 @@ func TestIsAuthorized(t *testing.T) {
 	})
 	p.MockPubKeysCall(keys)
 	require.NoError(t, a.IsAuthorized(context.Background(), authorizedToken), "token ok - expected to be authorized.")
+	require.Len(t, p.ExpectedRequests, 0)
+}
+func TestIsAuthorizedError(t *testing.T) {
+	oldKeySetExpiration := oidc.DefaultKeySetExpiration
+	oidc.DefaultKeySetExpiration = 0 * time.Second
+	defer func() {
+		oidc.DefaultKeySetExpiration = oldKeySetExpiration
+	}()
+
+	p := &oidc_testing.Provider{}
+	p.Setup(t)
+	p.MockDiscoveryCall()
+
+	and12, err := AND(Contains("perm1"), Contains("perm2"))
+	assert.NoError(t, err)
+	and13, err := AND(Contains("perm1"), Contains("perm3"))
+	assert.NoError(t, err)
+	orC, err := OR(and12, and13)
+	assert.NoError(t, err)
+
+	testConfig := Config{
+		Provider:      p.IssuerTestSrv.URL,
+		ClientID:      "clientID",
+		PermCondition: orC,
+		PermsClaim:    "perms",
+	}
+	a, err := New(context.Background(), testConfig)
+	require.NoError(t, err)
+
+	// perm1 is not enough.
+	authorizedToken, keys := p.NewIDToken(testConfig.ClientID, "sub1", "", map[string]interface{}{
+		"perms": []string{"perm1"},
+	})
+	p.MockPubKeysCall(keys)
+	require.EqualError(t, a.IsAuthorized(context.Background(), authorizedToken),
+		`Unauthorized. Permissions [perm1] of user "sub1" do not satisfy permission condition ((perm1 && perm2) || (perm1 && perm3)).`)
+	require.Len(t, p.ExpectedRequests, 0)
+
+	// perm1 and perm3 is ok.
+	authorizedToken, keys = p.NewIDToken(testConfig.ClientID, "sub1", "", map[string]interface{}{
+		"perms": []string{"perm1", "perm3"},
+	})
+	p.MockPubKeysCall(keys)
+	require.NoError(t, a.IsAuthorized(context.Background(), authorizedToken))
 	require.Len(t, p.ExpectedRequests, 0)
 }

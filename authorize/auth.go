@@ -69,11 +69,11 @@ func (a *authorizer) IsAuthorized(ctx context.Context, token string) error {
 		permissions = append(permissions, permissionStr)
 	}
 
-	if isAuthorized := a.config.PermCondition(permissions); isAuthorized {
+	if isAuthorized := a.config.PermCondition.isSatisfiedBy(permissions); isAuthorized {
 		return nil
 	}
 
-	return fmt.Errorf("Unauthorized. User %q is missing required permissions", idToken.Subject)
+	return fmt.Errorf("Unauthorized. Permissions %v of user %q do not satisfy permission condition %s.", permissions, idToken.Subject, a.config.PermCondition.stringRepr)
 }
 
 func IsRequestAuthorized(req *http.Request, a Authorizer, headerName string) error {
