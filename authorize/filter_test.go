@@ -21,27 +21,27 @@ var (
 func TestOR(t *testing.T) {
 	somePerms := []string{"a", "b", "c"}
 
-	c := OR()
-	assert.False(t, c.isSatisfiedBy(somePerms), "empty OR should return false.")
-	assert.Equal(t, "( || )", c.stringRepr)
+	c, err := OR()
+	assert.Error(t, err)
 
-	c = OR(falseCond)
-	assert.False(t, c.isSatisfiedBy(somePerms), "false == false")
-	assert.Equal(t, "(false)", c.stringRepr)
+	c, err = OR(falseCond)
+	assert.Error(t, err)
 
-	c = OR(trueCond)
-	assert.True(t, c.isSatisfiedBy(somePerms), "true == true")
-	assert.Equal(t, "(true)", c.stringRepr)
+	c, err = OR(trueCond)
+	assert.Error(t, err)
 
-	c = OR(trueCond, trueCond, trueCond)
+	c, err = OR(trueCond, trueCond, trueCond)
+	assert.NoError(t, err)
 	assert.True(t, c.isSatisfiedBy(somePerms), "true OR true OR true == true")
 	assert.Equal(t, "(true || true || true)", c.stringRepr)
 
-	c = OR(falseCond, falseCond, falseCond)
+	c, err = OR(falseCond, falseCond, falseCond)
+	assert.NoError(t, err)
 	assert.False(t, c.isSatisfiedBy(somePerms), "false OR false OR false == false")
 	assert.Equal(t, "(false || false || false)", c.stringRepr)
 
-	c = OR(falseCond, trueCond, falseCond)
+	c, err = OR(falseCond, trueCond, falseCond)
+	assert.NoError(t, err)
 	assert.True(t, c.isSatisfiedBy(somePerms), "false OR true OR false == true")
 	assert.Equal(t, "(false || true || false)", c.stringRepr)
 }
@@ -49,33 +49,42 @@ func TestOR(t *testing.T) {
 func TestAND(t *testing.T) {
 	somePerms := []string{"a", "b", "c"}
 
-	c := AND()
-	assert.False(t, c.isSatisfiedBy(somePerms), "empty AND should return false.")
-	assert.Equal(t, "( && )", c.stringRepr)
+	c, err := AND()
+	assert.Error(t, err)
 
-	c = AND(falseCond)
-	assert.False(t, c.isSatisfiedBy(somePerms), "false == false")
-	assert.Equal(t, "(false)", c.stringRepr)
+	c, err = AND(falseCond)
+	assert.Error(t, err)
 
-	c = AND(trueCond)
-	assert.True(t, c.isSatisfiedBy(somePerms), "true == true")
-	assert.Equal(t, "(true)", c.stringRepr)
+	c, err = AND(trueCond)
+	assert.Error(t, err)
 
-	c = AND(trueCond, trueCond, trueCond)
+	c, err = AND(trueCond, trueCond, trueCond)
+	assert.NoError(t, err)
 	assert.True(t, c.isSatisfiedBy(somePerms), "true OR true OR true == true")
 	assert.Equal(t, "(true && true && true)", c.stringRepr)
 
-	c = AND(falseCond, falseCond, falseCond)
+	c, err = AND(falseCond, falseCond, falseCond)
+	assert.NoError(t, err)
 	assert.False(t, c.isSatisfiedBy(somePerms), "false OR false OR false == false")
 	assert.Equal(t, "(false && false && false)", c.stringRepr)
 
-	c = AND(falseCond, trueCond, falseCond)
-	assert.False(t, AND(falseCond, trueCond, falseCond).isSatisfiedBy(somePerms), "false OR true OR false == false")
+	c, err = AND(falseCond, trueCond, falseCond)
+	assert.NoError(t, err)
+	assert.False(t, c.isSatisfiedBy(somePerms), "false OR true OR false == false")
 	assert.Equal(t, "(false && true && false)", c.stringRepr)
 }
 
 func TestComposite(t *testing.T) {
-	assert.Equal(t, "(false || false || true || (false) || (true && true))", OR(falseCond, falseCond, trueCond, OR(falseCond), AND(trueCond, trueCond)).stringRepr)
+	orFF, err := OR(falseCond, falseCond)
+	assert.NoError(t, err)
+
+	andTT, err := AND(trueCond, trueCond)
+	assert.NoError(t, err)
+
+	orC, err := OR(falseCond, falseCond, trueCond, orFF, andTT)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "(false || false || true || (false || false) || (true && true))", orC.stringRepr)
 }
 
 func TestContains(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Bplotka/oidc"
 	"github.com/Bplotka/oidc/testing"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,10 +76,17 @@ func TestIsAuthorizedError(t *testing.T) {
 	p.Setup(t)
 	p.MockDiscoveryCall()
 
+	and12, err := AND(Contains("perm1"), Contains("perm2"))
+	assert.NoError(t, err)
+	and13, err := AND(Contains("perm1"), Contains("perm3"))
+	assert.NoError(t, err)
+	orC, err := OR(and12, and13)
+	assert.NoError(t, err)
+
 	testConfig := Config{
 		Provider:      p.IssuerTestSrv.URL,
 		ClientID:      "clientID",
-		PermCondition: OR(AND(Contains("perm1"), Contains("perm2")), AND(Contains("perm1"), Contains("perm3"))),
+		PermCondition: orC,
 		PermsClaim:    "perms",
 	}
 	a, err := New(context.Background(), testConfig)
