@@ -25,10 +25,14 @@ func TestOR(t *testing.T) {
 	assert.Error(t, err)
 
 	c, err = OR(falseCond)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.False(t, c.isSatisfiedBy(somePerms))
+	assert.Equal(t, "false", c.stringRepr)
 
 	c, err = OR(trueCond)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.True(t, c.isSatisfiedBy(somePerms))
+	assert.Equal(t, "true", c.stringRepr)
 
 	c, err = OR(trueCond, trueCond, trueCond)
 	assert.NoError(t, err)
@@ -53,10 +57,14 @@ func TestAND(t *testing.T) {
 	assert.Error(t, err)
 
 	c, err = AND(falseCond)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.False(t, c.isSatisfiedBy(somePerms))
+	assert.Equal(t, "false", c.stringRepr)
 
 	c, err = AND(trueCond)
-	assert.Error(t, err)
+	assert.NoError(t, err)
+	assert.True(t, c.isSatisfiedBy(somePerms))
+	assert.Equal(t, "true", c.stringRepr)
 
 	c, err = AND(trueCond, trueCond, trueCond)
 	assert.NoError(t, err)

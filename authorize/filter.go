@@ -13,8 +13,11 @@ type Condition struct {
 
 // OR is an array of conditions with logic OR. If no condition is passed it returns false.
 func OR(conditions ...Condition) (Condition, error) {
-	if len(conditions) < 2 {
-		return Condition{}, fmt.Errorf("OR condition must be used for 2 or more elements, got: %v", conditions)
+	if len(conditions) == 0 {
+		return Condition{}, fmt.Errorf("OR condition must be used for 1 or more elements, got: %v", conditions)
+	}
+	if len(conditions) == 1 {
+		return conditions[0], nil
 	}
 	return Condition{
 		isSatisfiedBy: func(tokenPerms []string) bool {
@@ -31,8 +34,11 @@ func OR(conditions ...Condition) (Condition, error) {
 
 // AND is an array of conditions with logic AND. If no condition is passed it returns false.
 func AND(conditions ...Condition) (Condition, error) {
-	if len(conditions) < 2 {
-		return Condition{}, fmt.Errorf("OR condition must be used for 2 or more elements, got: %v", conditions)
+	if len(conditions) == 0 {
+		return Condition{}, fmt.Errorf("OR condition must be used for 1 or more elements, got: %v", conditions)
+	}
+	if len(conditions) == 1 {
+		return conditions[0], nil
 	}
 	return Condition{
 		isSatisfiedBy: func(tokenPerms []string) bool {
