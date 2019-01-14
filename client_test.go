@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bplotka/go-httpt"
-	"github.com/Bplotka/go-httpt/rt"
+	"github.com/bwplotka/go-httpt"
+	"github.com/bwplotka/go-httpt/rt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/net/context"

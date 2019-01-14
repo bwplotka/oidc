@@ -15,7 +15,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Bplotka/oidc"
+	"github.com/bwplotka/oidc"
 )
 
 const (

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Bplotka/go-jwt"
-	"github.com/Bplotka/oidc"
+	"github.com/bwplotka/go-jwt"
+	"github.com/bwplotka/oidc"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/square/go-jose.v2"
 )

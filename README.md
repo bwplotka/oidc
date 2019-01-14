@@ -20,7 +20,7 @@ package main
 import (
     "context"
     
-    "github.com/Bplotka/oidc"
+    "github.com/bwplotka/oidc"
 )
 
 func main() {

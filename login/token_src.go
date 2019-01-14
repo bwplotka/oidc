@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Bplotka/oidc"
+	"github.com/bwplotka/oidc"
 )
 
 //go:generate mockery -name Cache -case underscore -inpkg
@@ -90,7 +90,7 @@ func (s *OIDCTokenSource) clearIDToken(resetTS func()) func() error {
 		if err != nil {
 			s.logger.Printf("Error: %v\n", err)
 			// Nothing to clear.
-			// TODO(Bplotka): This is not true if we cannot get cache file at all. Fix that.
+			// TODO(bwplotka): This is not true if we cannot get cache file at all. Fix that.
 			return nil
 		}
 
@@ -247,7 +247,7 @@ func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 	}()
 
 	select {
-	// TODO(bplotka): What if someone will scan our callback endpoint?
+	// TODO(bwplotka): What if someone will scan our callback endpoint?
 	case msg := <-s.callbackSrv.Callback():
 		// Give some time for server to finish request.
 		time.Sleep(200 * time.Millisecond)

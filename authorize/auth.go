@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/Bplotka/oidc"
+	"github.com/bwplotka/oidc"
 )
 
 type Authorizer interface {

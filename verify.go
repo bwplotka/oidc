@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Bplotka/oidc/xerrors"
+	"github.com/bwplotka/oidc/xerrors"
 	jose "gopkg.in/square/go-jose.v2"
 )
 
