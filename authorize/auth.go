@@ -73,7 +73,7 @@ func (a *authorizer) IsAuthorized(ctx context.Context, token string) error {
 		return nil
 	}
 
-	return fmt.Errorf("Unauthorized. Permissions %v of user %q do not satisfy permission condition %s.", permissions, idToken.Subject, a.config.PermCondition.stringRepr)
+	return fmt.Errorf("Unauthorized. User %q has permissions %v and needs to have permissions %s.", idToken.Subject, permissions, a.config.PermCondition.stringRepr)
 }
 
 func IsRequestAuthorized(req *http.Request, a Authorizer, headerName string) error {
