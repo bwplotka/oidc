@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"github.com/Bplotka/go-httpt/rt"
-	"github.com/Bplotka/go-jwt"
+	"github.com/bwplotka/go-httpt/rt"
+	"github.com/bwplotka/go-jwt"
 	"gopkg.in/square/go-jose.v2"
 )
 

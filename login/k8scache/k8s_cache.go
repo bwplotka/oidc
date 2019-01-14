@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Bplotka/oidc"
-	"github.com/Bplotka/oidc/login"
+	"github.com/bwplotka/oidc"
+	"github.com/bwplotka/oidc/login"
 	cfg "k8s.io/client-go/tools/clientcmd"
 	api "k8s.io/client-go/tools/clientcmd/api"
 )
@@ -186,14 +186,14 @@ func (c *Cache) Token() (*oidc.Token, error) {
 		if token.IDToken == "" {
 			token.IDToken = authConfig[IDToken]
 		} else if token.IDToken != authConfig[IDToken] {
-			// TODO(bplotka): Allow that?
+			// TODO(bwplotka): Allow that?
 			return nil, fmt.Errorf("Different IDTokens among users, found on user %s", name)
 		}
 
 		if token.AccessToken == "" {
 			token.AccessToken = authConfig[AccessToken]
 		} else if token.AccessToken != authConfig[AccessToken] {
-			// TODO(bplotka): Allow that?
+			// TODO(bwplotka): Allow that?
 			return nil, fmt.Errorf("Different AccessTokens among users, found on user %s", name)
 		}
 

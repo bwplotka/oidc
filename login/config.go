@@ -18,7 +18,7 @@ func ConfigFromYaml(yamlContent []byte) (Config, error) {
 		return Config{}, fmt.Errorf("Config: Failed to parse config file: %v", err)
 	}
 
-	// TODO(bplotka) validate cfg.
+	// TODO(bwplotka) validate cfg.
 	return c, nil
 }
 
@@ -37,6 +37,6 @@ func OIDCConfigFromYaml(yamlContent []byte) (OIDCConfig, error) {
 		return OIDCConfig{}, fmt.Errorf("Config: Failed to parse OIDC config file: %v", err)
 	}
 
-	// TODO(bplotka) validate cfg.
+	// TODO(bwplotka) validate cfg.
 	return c, nil
 }

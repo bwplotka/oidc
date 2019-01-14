@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Bplotka/oidc"
-	"github.com/Bplotka/oidc/login"
+	"github.com/bwplotka/oidc"
+	"github.com/bwplotka/oidc/login"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

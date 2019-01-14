@@ -11,8 +11,8 @@ import (
     "log"
     "os"
     
-    "github.com/Bplotka/oidc/login"
-    "github.com/Bplotka/oidc/login/diskcache"
+    "github.com/bwplotka/oidc/login"
+    "github.com/bwplotka/oidc/login/diskcache"
 )
 
 func main() {

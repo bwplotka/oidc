@@ -1,7 +1,7 @@
 package authorize
 
 // Config is an authorize configuration.
-// TODO(bplotka): Add proper unmarshaller/marshaller for that data struct.
+// TODO(bwplotka): Add proper unmarshaller/marshaller for that data struct.
 type Config struct {
 	// OIDC issuer url.
 	Provider string

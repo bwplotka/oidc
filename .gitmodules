@@ -1,9 +1,9 @@
-[submodule "vendor/github.com/Bplotka/go-httpt"]
-	path = vendor/github.com/Bplotka/go-httpt
-	url = https://github.com/Bplotka/go-httpt
-[submodule "vendor/github.com/Bplotka/go-jwt"]
-	path = vendor/github.com/Bplotka/go-jwt
-	url = https://github.com/Bplotka/go-jwt
+[submodule "vendor/github.com/bwplotka/go-httpt"]
+	path = vendor/github.com/bwplotka/go-httpt
+	url = https://github.com/bwplotka/go-httpt
+[submodule "vendor/github.com/bwplotka/go-jwt"]
+	path = vendor/github.com/bwplotka/go-jwt
+	url = https://github.com/bwplotka/go-jwt
 [submodule "vendor/github.com/ghodss/yaml"]
 	path = vendor/github.com/ghodss/yaml
 	url = https://github.com/ghodss/yaml
@@ -19,3 +19,18 @@
 [submodule "vendor/gopkg.in/yaml.v2"]
 	path = vendor/gopkg.in/yaml.v2
 	url = https://gopkg.in/yaml.v2
+[submodule "vendor/github.com/pkg/errors"]
+	path = vendor/github.com/pkg/errors
+	url = https://github.com/pkg/errors
+[submodule "vendor/k8s.io/client-go"]
+	path = vendor/k8s.io/client-go
+	url = https://github.com/kubernetes/client-go
+[submodule "vendor/k8s.io/apimachinery"]
+	path = vendor/k8s.io/apimachinery
+	url = https://github.com/kubernetes/apimachinery
+[submodule "vendor/k8s.io/klog"]
+	path = vendor/k8s.io/klog
+	url = https://github.com/kubernetes/klog
+[submodule "vendor/github.com/google/gofuzz"]
+	path = vendor/github.com/google/gofuzz
+	url = https://github.com/google/gofuzz
