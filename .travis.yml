@@ -1,16 +1,13 @@
 language: go
 
 go:
-  - 1.8.x
-  - master
+  - stable
+  - "1.10"
 
-before_install:
-    - go get github.com/golang/lint/golint
+go_import_path: github.com/bwplotka/oidc
 
 install:
-    - go get -d -v -t ./... && go build -v ./...
+    - make deps
 
 script:
-    - go vet -x $(go list ./... | grep -v /vendor/)
-    - $HOME/gopath/bin/golint $(go list ./... | grep -v /vendor/)
-    - go test -v $(go list ./... | grep -v /vendor/)
+    - make format test
