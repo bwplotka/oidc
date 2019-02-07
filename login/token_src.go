@@ -232,7 +232,7 @@ func (s *OIDCTokenSource) newToken(ctx context.Context) (*oidc.Token, error) {
 		cfg:           s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()),
 	})
 
-	authURL := s.oidcClient.AuthCodeURL(s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()), state, extra)
+	authURL := s.oidcClient.AuthCodeURL(s.getOIDCConfigWithRedirectURL(s.callbackSrv.RedirectURL()), state, extra, s.cfg.ExtraAuthRequestParams)
 	s.logger.Printf("Info: Opening browser to access URL: %s", authURL)
 	err := s.openBrowser(authURL)
 	if err != nil {
