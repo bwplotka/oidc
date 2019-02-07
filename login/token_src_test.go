@@ -153,7 +153,7 @@ func stripArgFromURL(arg string, urlToStrip string) (string, error) {
 	return argValue, nil
 }
 
-func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string, retToken interface{}) func(string) error {
+func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string, retToken interface{}, authURLSuffix string) func(string) error {
 	b, err := json.Marshal(retToken)
 	require.NoError(s.T(), err)
 	s.provider.MockTokenCall(http.StatusOK, string(b))
@@ -165,13 +165,14 @@ func (s *TokenSourceTestSuite) callSuccessfulCallback(expectedWord string, retTo
 		require.NoError(t, err)
 
 		s.Equal(fmt.Sprintf(
-			"%s/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s",
+			"%s/auth1?client_id=%s&nonce=%s&redirect_uri=%s&response_type=code&scope=%s&state=%s%s",
 			s.provider.IssuerTestSrv.URL,
 			testClientID,
 			expectedWord,
 			url.QueryEscape(redirectURL),
 			strings.Join(s.testOIDCCfg.Scopes, "+"),
 			expectedWord,
+			authURLSuffix,
 		), urlToGet)
 
 		go func() {
@@ -213,7 +214,7 @@ func (s *TokenSourceTestSuite) Test_CacheErr_NewToken_OKCallback() {
 		return expectedWord
 	}
 
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken, "")
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
 
@@ -232,7 +233,33 @@ func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback() {
 		return expectedWord
 	}
 
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken, "")
+	token, err := s.oidcSource.OIDCToken(context.Background())
+	s.Require().NoError(err)
+
+	s.Equal(testToken, *token)
+
+	s.cache.AssertExpectations(s.T())
+	s.Len(s.provider.ExpectedRequests, 0)
+}
+
+func (s *TokenSourceTestSuite) Test_CacheEmpty_NewToken_OKCallback_ExtraAuthParams() {
+	s.oidcSource.cfg.ExtraAuthRequestParams = url.Values{
+		// zzz_extra_param so that url Encoder writes it at the end of the URL.
+		"zzz_extra_param": []string{"extra_val"},
+	}
+	defer func() {
+		s.oidcSource.cfg.ExtraAuthRequestParams = nil
+	}()
+	s.cache.On("Token").Return(nil, nil)
+	s.cache.On("SaveToken", &testToken).Return(nil)
+
+	const expectedWord = "secret_token"
+	s.oidcSource.genRandToken = func() string {
+		return expectedWord
+	}
+
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken, "&zzz_extra_param=extra_val")
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
 
@@ -266,7 +293,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshToken_OK() {
 		RefreshToken: expectedToken.RefreshToken,
 		IDToken:      expectedToken.IDToken,
 		TokenType:    "Bearer",
-	})
+	}, "")
 
 	// For 2th verification inside reuse TokenSource.
 	s.provider.MockPubKeysCall(jwkSetJSON2)
@@ -295,7 +322,7 @@ func (s *TokenSourceTestSuite) Test_IDTokenWrongNonce_RefreshTokenErr_NewToken_O
 	s.oidcSource.genRandToken = func() string {
 		return expectedWord
 	}
-	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken)
+	s.oidcSource.openBrowser = s.callSuccessfulCallback(expectedWord, testToken, "")
 
 	token, err := s.oidcSource.OIDCToken(context.Background())
 	s.Require().NoError(err)
