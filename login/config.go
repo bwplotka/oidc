@@ -2,6 +2,7 @@ package login
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/ghodss/yaml"
 )
@@ -9,6 +10,9 @@ import (
 // Config is a login configuration. It does not contain oidc configuration.
 type Config struct {
 	NonceCheck bool `json:"include_nonce"`
+	// ExtraAuthRequestParams are extra url params in OIDC auth request.
+	// For example with Google OIDC provider https://accounts.google.com, you can use "access_type=offline".
+	ExtraAuthRequestParams url.Values `json:"extra_auth_request_params"`
 }
 
 // ConfigFromYaml parses config from yaml file.
