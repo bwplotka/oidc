@@ -21,11 +21,22 @@ const DefaultCachePath = "$HOME/.oidc_keys"
 type Cache struct {
 	cfg       login.OIDCConfig
 	storePath string
+	storeFile string
 }
 
-// NewTokenCache constructs disk cache.
+// NewCache constructs disk cache, that will store tokens to ${path}/token_${os.Args[0]}_${ClientID}
 func NewCache(path string, cfg login.OIDCConfig) *Cache {
-	return &Cache{cfg: cfg, storePath: os.ExpandEnv(path)}
+	return NewCacheEnt(path, os.Args[0], cfg)
+}
+
+// NewCacheEnt constructs disk cache, that will store tokens to ${path}/token_${localEnt}_${ClientID}. localEnt is local entity name, for example tool name (see NewCache).
+// If you need to request two tokens with different scopes using the same ClientID in the same tool, you have to use two different entities.
+func NewCacheEnt(path string, localEnt string, cfg login.OIDCConfig) *Cache {
+	return &Cache{
+		cfg:       cfg,
+		storePath: os.ExpandEnv(path),
+		storeFile: localEnt,
+	}
 }
 
 func (c *Cache) getOrCreateStoreDir() (string, error) {
