@@ -26,7 +26,7 @@ type Cache struct {
 
 // NewCache constructs disk cache, that will store tokens to ${path}/token_${os.Args[0]}_${ClientID}
 func NewCache(path string, cfg login.OIDCConfig) *Cache {
-	return NewCacheEnt(path, os.Args[0], cfg)
+	return NewCacheEnt(path, filepath.Base(os.Args[0]), cfg)
 }
 
 // NewCacheEnt constructs disk cache, that will store tokens to ${path}/token_${localEnt}_${ClientID}. localEnt is local entity name, for example tool name (see NewCache).
@@ -45,8 +45,7 @@ func (c *Cache) getOrCreateStoreDir() (string, error) {
 }
 
 func (c *Cache) tokenCacheFileName() string {
-	cliToolName := filepath.Base(os.Args[0])
-	return fmt.Sprintf("token_%s_%s", cliToolName, c.cfg.ClientID)
+	return fmt.Sprintf("token_%s_%s", c.storeFile, c.cfg.ClientID)
 }
 
 // Token retrieves token from file.
