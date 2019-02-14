@@ -15,6 +15,14 @@ type Config struct {
 	ExtraAuthRequestParams url.Values `json:"extra_auth_request_params"`
 }
 
+var (
+	// GoogleRTParams are ExtraAuthRequestParams that you can use in Google OIDC flow to retrieve refresh token.
+	GoogleRTParams = url.Values{
+		"access_type": []string{"offline"}, // Fetch refresh token.
+		"prompt":      []string{"consent"}, // Always show consent screen on users browser, this will force refresh token to be refetched everytime OIDC browser dance happens.
+	}
+)
+
 // ConfigFromYaml parses config from yaml file.
 func ConfigFromYaml(yamlContent []byte) (Config, error) {
 	var c Config
