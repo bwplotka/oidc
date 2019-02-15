@@ -68,8 +68,6 @@ func (s *ReuseTokenSource) OIDCToken(ctx context.Context) (*Token, error) {
 			return s.t, nil
 		}
 		s.debugLogger.Printf("reuseTokenSource: Token not valid. Obtaining new one. Cause: %v\n", err)
-	} else {
-		s.debugLogger.Println("reuseTokenSource: No token to reuse. Obtaining new one")
 	}
 	t, err := s.new.OIDCToken(ctx)
 	if err != nil {
