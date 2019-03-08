@@ -43,6 +43,8 @@ func openBrowser(url string) error {
 	case "windows":
 		cmd = "cmd"
 		args = []string{"/c", "start"}
+		// If we don't escape &, cmd will ignore everything after the first &.
+		url = strings.Replace(url, "&", "^&", -1)
 	case "darwin":
 		cmd = "open"
 	default: // "linux", "freebsd", "openbsd", "netbsd"
