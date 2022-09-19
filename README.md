@@ -55,7 +55,7 @@ See [login](./login/README.md)
 
 ## Deps:
 
-Vendoring using submodules. See [.gitmodules](.gitmodules)
+Uses go modules for dependecies
  
 
 ## Wishlist:

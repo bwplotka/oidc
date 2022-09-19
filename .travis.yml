@@ -2,7 +2,7 @@ language: go
 
 go:
   - stable
-  - "1.10"
+  - "1.19"
 
 go_import_path: github.com/bwplotka/oidc
 
