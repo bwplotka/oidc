@@ -1,4 +1,4 @@
-FILES             ?= $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+FILES             ?= $(shell find . -type f -name '*.go')
 
 all: deps build
 
@@ -8,7 +8,7 @@ format:
 
 deps: install-tools
 	@echo ">> downloading dependencies"
-	@dep ensure
+	@go mod download
 
 build:
 	@echo ">> compiling oidc"
@@ -17,11 +17,9 @@ build:
 install-tools:
 	@echo ">> fetching goimports"
 	@go get -u golang.org/x/tools/cmd/goimports
-	@echo ">> fetching dep"
-	@go get -u github.com/golang/dep/cmd/dep
 
 test: build
 	@echo ">> running all tests"
-	@go test $(shell go list ./... | grep -v /vendor/)
+	@go test $(shell go list ./...)
 
 .PHONY: all format deps build install-tools test
